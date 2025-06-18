@@ -1,0 +1,70 @@
+<!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
+<idea-plugin>
+    <!-- 插件唯一标识符 -->
+    <id>com.codereview.plugin</id>
+
+    <!-- 插件名称 -->
+    <name>DingCoder AI</name>
+
+    <!-- 插件版本 -->
+    <version>1.0.0</version>
+
+    <!-- 插件供应商 -->
+    <vendor email="support@example.com" url="https://www.example.com">鼎码智辅</vendor>
+
+    <!-- 插件描述 -->
+    <description><![CDATA[
+        DingCoder AI插件：<br>
+        - 通过MQTT接收AI生成的代码<br>
+        - 展示代码生成结果<br>
+        - 一键生成Java文件<br>
+        - 支持批量确认代码生成
+    ]]></description>
+
+    <!-- 插件变更记录 -->
+    <change-notes><![CDATA[
+        初始版本：<br>
+        - 登录功能<br>
+        - MQTT消息订阅<br>
+        - 代码展示和确认<br>
+        - Java文件生成功能
+    ]]></change-notes>
+
+    <!-- IDEA版本兼容性 -->
+    <idea-version since-build="203" until-build="241.*"/>
+
+    <!-- 依赖配置 -->
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.java</depends>
+
+    <!-- 扩展和行为定义 -->
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- 工具窗口扩展 -->
+        <toolWindow id="鼎码智辅" secondary="true" icon="com.codereview.plugin.ui.CodeReviewIcons.MAIN_ICON" anchor="right"
+                    factoryClass="com.codereview.plugin.ui.ChatToolWindowFactory"/>
+
+        <!-- 应用级别服务 -->
+        <applicationService serviceImplementation="com.codereview.plugin.service.AIService"/>
+        <applicationService serviceImplementation="com.codereview.plugin.auth.AuthService"/>
+        <applicationService serviceImplementation="com.codereview.plugin.service.MQTTService"/>
+        
+        <!-- 项目级别服务 -->
+        <projectService serviceImplementation="com.codereview.plugin.service.ReviewService"/>
+        <projectService serviceImplementation="com.codereview.plugin.service.CodeGenerationService"/>
+        
+        <!-- 启动活动 - 用于在启动时检查登录状态 -->
+        <postStartupActivity implementation="com.codereview.plugin.startup.LoginStartupActivity"/>
+    </extensions>
+
+    <!-- 动作定义 -->
+    <actions>
+        <action id="com.codereview.plugin.action.ChatAction" 
+                class="com.codereview.plugin.action.ChatAction" 
+                text="鼎码智辅" 
+                icon="com.codereview.plugin.ui.CodeReviewIcons.MAIN_ICON"
+                description="打开鼎码智辅">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+            <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt A"/>
+        </action>
+    </actions>
+</idea-plugin> 

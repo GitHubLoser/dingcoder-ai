@@ -1,0 +1,28 @@
+# Gradle
+.gradle/
+build/
+out/
+classes/
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Eclipse
+.classpath
+.project
+.settings/
+
+# Mac OS
+.DS_Store
+
+# Local configuration
+local.properties
+
+# Logs
+*.log
+
+# Sandbox
+.sandbox/ 
