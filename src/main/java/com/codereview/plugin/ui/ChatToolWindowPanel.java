@@ -489,11 +489,62 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             bubble.add(label);
             outerPanel.add(bubble);
         } else if (content.trim().startsWith("package ") || content.trim().contains("class ") || content.trim().contains("interface ") || content.trim().contains("enum ")) {
-            // 代码消息：创建一个包含编辑器和按钮的容器
-            JPanel codeContainer = new JPanel(new BorderLayout());
-            codeContainer.setOpaque(false);
+            // 折叠代码块：默认只显示类名，点击展开/收起完整代码
+            String classLine = extractJavaClassLine(content);
+            JPanel foldPanel = new JPanel();
+            foldPanel.setLayout(new BorderLayout());
+            foldPanel.setOpaque(false);
 
-            // 创建代码编辑器
+            // 折叠按钮（类名）
+            JToggleButton toggleButton = new JToggleButton("▶ " + classLine);
+            toggleButton.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 14));
+            toggleButton.setFocusPainted(false);
+            toggleButton.setContentAreaFilled(false);
+            toggleButton.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
+            toggleButton.setHorizontalAlignment(SwingConstants.LEFT);
+
+            // 生成Java文件按钮
+            JButton generateButton = new JButton("生成Java文件");
+            generateButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 13));
+            generateButton.setForeground(new JBColor(Color.WHITE, Color.WHITE));
+            generateButton.setBackground(new JBColor(new Color(0x2B5AB8), new Color(0x2B5AB8)));
+            generateButton.setBorder(BorderFactory.createEmptyBorder(6, 12, 6, 12));
+            generateButton.setFocusPainted(false);
+            generateButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            generateButton.setOpaque(true);
+            generateButton.addActionListener(e -> {
+                CodeGenerationService codeGenService = CodeGenerationService.getInstance(project);
+                if (codeGenService.generateJavaFile(content, true)) {
+                    generateButton.setText("✓ 已生成");
+                    generateButton.setEnabled(false);
+                    generateButton.setBackground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
+                }
+            });
+            generateButton.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseEntered(MouseEvent e) {
+                    if (generateButton.isEnabled()) {
+                        generateButton.setBackground(new JBColor(new Color(0x234A94), new Color(0x234A94)));
+                    }
+                }
+                @Override
+                public void mouseExited(MouseEvent e) {
+                    if (generateButton.isEnabled()) {
+                        generateButton.setBackground(new JBColor(new Color(0x2B5AB8), new Color(0x2B5AB8)));
+                    }
+                }
+            });
+
+            // 标题行（类名+按钮）
+            JPanel titlePanel = new JPanel();
+            titlePanel.setLayout(new BoxLayout(titlePanel, BoxLayout.X_AXIS));
+            titlePanel.setOpaque(false);
+            titlePanel.add(toggleButton);
+            titlePanel.add(Box.createHorizontalStrut(8));
+            titlePanel.add(generateButton);
+            titlePanel.add(Box.createHorizontalGlue());
+
+            // 代码编辑器
             EditorFactory editorFactory = EditorFactory.getInstance();
             Document document = editorFactory.createDocument(content);
             Editor editor = editorFactory.createEditor(document, project, JavaFileType.INSTANCE, true);
@@ -512,58 +563,22 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             editorEx.setColorsScheme(colorsScheme);
             editorEx.setBackgroundColor(new JBColor(new Color(250, 250, 250), new Color(40, 44, 50)));
             editorEx.getColorsScheme().setEditorFontName("JetBrains Mono");
-            
-            // 创建一个面板来包含编辑器和生成按钮
-            JPanel editorWithButtonPanel = new JPanel(new BorderLayout());
-            editorWithButtonPanel.setOpaque(false);
-            
-            // 创建生成按钮
-            JButton generateButton = new JButton("生成Java文件");
-            generateButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 13));
-            generateButton.setForeground(new JBColor(Color.WHITE, Color.WHITE));
-            generateButton.setBackground(new JBColor(new Color(0x2B5AB8), new Color(0x2B5AB8)));
-            generateButton.setBorder(BorderFactory.createEmptyBorder(6, 12, 6, 12));
-            generateButton.setFocusPainted(false);
-            generateButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-            generateButton.setOpaque(true);
-            
-            generateButton.addActionListener(e -> {
-                CodeGenerationService codeGenService = CodeGenerationService.getInstance(project);
-                if (codeGenService.generateJavaFile(content, true)) {
-                    generateButton.setText("✓ 已生成");
-                    generateButton.setEnabled(false);
-                    generateButton.setBackground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
-                }
-            });
-            
-            // 添加鼠标悬停效果
-            generateButton.addMouseListener(new MouseAdapter() {
-                @Override
-                public void mouseEntered(MouseEvent e) {
-                    if (generateButton.isEnabled()) {
-                        generateButton.setBackground(new JBColor(new Color(0x234A94), new Color(0x234A94)));
-                    }
-                }
-                
-                @Override
-                public void mouseExited(MouseEvent e) {
-                    if (generateButton.isEnabled()) {
-                        generateButton.setBackground(new JBColor(new Color(0x2B5AB8), new Color(0x2B5AB8)));
-                    }
-                }
-            });
-            
-            // 创建按钮容器并设置为左上角
-            JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
-            buttonPanel.setOpaque(false);
-            buttonPanel.add(generateButton);
-            
-            // 将编辑器和按钮添加到面板
-            editorWithButtonPanel.add(editor.getComponent(), BorderLayout.CENTER);
-            editorWithButtonPanel.add(buttonPanel, BorderLayout.NORTH);
-            
             message.setEditor(editor);
-            outerPanel.add(editorWithButtonPanel);
+            JComponent editorComponent = editor.getComponent();
+            editorComponent.setVisible(false); // 默认折叠
+
+            // 展开/收起逻辑
+            toggleButton.addActionListener(e -> {
+                boolean expanded = toggleButton.isSelected();
+                editorComponent.setVisible(expanded);
+                toggleButton.setText((expanded ? "▼ " : "▶ ") + classLine);
+                foldPanel.revalidate();
+                foldPanel.repaint();
+            });
+
+            foldPanel.add(titlePanel, BorderLayout.NORTH);
+            foldPanel.add(editorComponent, BorderLayout.CENTER);
+            outerPanel.add(foldPanel);
         } else {
             // AI普通消息：靠左灰色气泡
             JPanel bubble = new JPanel();
@@ -579,6 +594,31 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             outerPanel.add(Box.createHorizontalGlue());
         }
         return outerPanel;
+    }
+    
+    // 提取Java类/接口/枚举声明行，只显示类名.java
+    private String extractJavaClassLine(String code) {
+        String[] lines = code.split("\n");
+        for (String line : lines) {
+            String trim = line.trim();
+            if (trim.startsWith("public class ") || trim.startsWith("class ")) {
+                return extractName(trim, "class");
+            } else if (trim.startsWith("public interface ") || trim.startsWith("interface ")) {
+                return extractName(trim, "interface");
+            } else if (trim.startsWith("public enum ") || trim.startsWith("enum ")) {
+                return extractName(trim, "enum");
+            }
+        }
+        return "Java代码.java";
+    }
+    // 提取名称并加.java后缀
+    private String extractName(String line, String keyword) {
+        String[] parts = line.split(keyword);
+        if (parts.length > 1) {
+            String name = parts[1].trim().split("[\\s\\{]")[0];
+            return name + ".java";
+        }
+        return "Java代码.java";
     }
     
     private JButton createStyledButton(String text, Color bgColor) {
