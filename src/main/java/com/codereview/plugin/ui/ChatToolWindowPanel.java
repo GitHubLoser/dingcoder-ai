@@ -477,114 +477,100 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     }
     
     private JPanel createMessagePanel(ChatMessage message) {
-        JPanel containerPanel = new JBPanel<>(new BorderLayout());
-        containerPanel.setOpaque(false);
-        containerPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
-        
-        JPanel messagePanel = new JBPanel<>();
-        messagePanel.setLayout(new BoxLayout(messagePanel, BoxLayout.Y_AXIS));
-        messagePanel.setBorder(JBUI.Borders.empty(12, 16));
-        messagePanel.setMaximumSize(new Dimension(600, Integer.MAX_VALUE));
-        
-        if (message.isUser()) {
-            messagePanel.setBackground(USER_BUBBLE_COLOR);
-            containerPanel.add(messagePanel, BorderLayout.EAST);
-            
-            // 用户消息使用普通文本区域
-            JTextArea textArea = new JTextArea(message.getContent());
-            textArea.setOpaque(false);
-            textArea.setEditable(false);
-            textArea.setLineWrap(true);
-            textArea.setWrapStyleWord(true);
-            textArea.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
-            textArea.setForeground(Color.WHITE);
-            messagePanel.add(textArea);
-        } else {
-            // AI回复可能包含代码，使用Editor组件
-            String content = message.getContent();
-            
-            // 检查是否是特殊消息，不显示按钮和背景框
-            boolean isSpecialMessage = "正在为您生成代码，请稍候...".equals(content.trim()) || 
-                                     "所有代码均已生成".equals(content.trim());
-            
-            if (isSpecialMessage) {
-                // 特殊消息：普通文本，无背景框
-                messagePanel.setOpaque(false);
-                containerPanel.add(messagePanel, BorderLayout.WEST);
-                
-                // 使用普通文本区域
-                JTextArea textArea = new JTextArea(content);
-                textArea.setOpaque(false);
-                textArea.setEditable(false);
-                textArea.setLineWrap(true);
-                textArea.setWrapStyleWord(true);
-                textArea.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
-                textArea.setForeground(UIUtil.getLabelForeground());
-                messagePanel.add(textArea);
-            } else {
-                // 普通AI消息：带背景框和按钮
-                messagePanel.setBackground(ASSISTANT_BUBBLE_COLOR);
-                containerPanel.add(messagePanel, BorderLayout.WEST);
-                
-                // 创建编辑器
-                EditorFactory editorFactory = EditorFactory.getInstance();
-                Document document = editorFactory.createDocument(content);
-                Editor editor = editorFactory.createEditor(document, project, JavaFileType.INSTANCE, true);
-                
-                // 配置编辑器设置
-                EditorEx editorEx = (EditorEx) editor;
-                EditorSettings settings = editor.getSettings();
-                settings.setFoldingOutlineShown(false);
-                settings.setLineNumbersShown(false);
-                settings.setLineMarkerAreaShown(false);
-                settings.setIndentGuidesShown(false);
-                settings.setGutterIconsShown(false);
-                settings.setRightMarginShown(false);
-                settings.setAdditionalColumnsCount(0);
-                settings.setAdditionalLinesCount(0);
-                settings.setUseSoftWraps(true);
-                
-                // 使用当前主题的配色
-                EditorColorsScheme colorsScheme = EditorColorsManager.getInstance().getGlobalScheme();
-                editorEx.setColorsScheme(colorsScheme);
-                
-                // 设置背景色为透明
-                editorEx.setBackgroundColor(ASSISTANT_BUBBLE_COLOR);
-                
-                // 添加编辑器组件到消息面板
-                JComponent editorComponent = editor.getComponent();
-                editorComponent.setPreferredSize(new Dimension(550, Math.min(400, editor.getDocument().getLineCount() * 20)));
-                messagePanel.add(editorComponent);
-                
-                // 在ChatMessage类中保存editor引用，以便后续dispose
-                message.setEditor(editor);
-                
-                // 添加按钮面板
-                JPanel buttonPanel = new JBPanel<>(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-                buttonPanel.setOpaque(false);
-                
-                // 复制按钮
-                JButton copyButton = createStyledButton("📋 复制代码", new JBColor(new Color(22, 119, 255), new Color(52, 139, 255)));
-                copyButton.addActionListener(e -> copyToClipboard(content));
-                buttonPanel.add(copyButton);
-                
-                // 生成Java文件按钮
-                JButton generateButton = createStyledButton("✨ 生成Java文件", new JBColor(new Color(40, 167, 69), new Color(60, 187, 89)));
-                generateButton.addActionListener(e -> {
-                    CodeGenerationService codeGenService = CodeGenerationService.getInstance(project);
-                    if (codeGenService.generateJavaFile(content, true)) {
-                        generateButton.setText("✓ 已生成");
-                        generateButton.setEnabled(false);
-                    }
-                });
-                buttonPanel.add(generateButton);
-                
-                messagePanel.add(Box.createVerticalStrut(8));
-                messagePanel.add(buttonPanel);
-            }
+        JPanel outerPanel = new JPanel();
+        outerPanel.setLayout(new BoxLayout(outerPanel, BoxLayout.X_AXIS));
+        outerPanel.setOpaque(false);
+        outerPanel.setBorder(JBUI.Borders.empty(6, 0, 6, 0));
+
+        String content = message.getContent();
+        boolean isSpecialMessage = "正在为您生成代码，请稍候...".equals(content.trim()) || 
+                                 "所有代码均已生成".equals(content.trim());
+
+        if (isSpecialMessage) {
+            // 特殊消息：居中淡蓝色圆角气泡
+            JPanel bubble = new JPanel();
+            bubble.setOpaque(true);
+            bubble.setBackground(new JBColor(new Color(232, 244, 253), new Color(40, 50, 60)));
+            bubble.setBorder(BorderFactory.createEmptyBorder(12, 0, 12, 0)); // 只上下padding
+            bubble.setLayout(new BoxLayout(bubble, BoxLayout.X_AXIS));
+            JLabel label = new JLabel(content);
+            label.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 16));
+            label.setForeground(new JBColor(new Color(33, 150, 243), new Color(120, 170, 255)));
+            bubble.add(Box.createHorizontalGlue());
+            bubble.add(label);
+            bubble.add(Box.createHorizontalGlue());
+            outerPanel.add(bubble);
+            return outerPanel;
         }
-        
-        return containerPanel;
+
+        if (message.isUser()) {
+            // 用户消息：靠右蓝色圆角气泡
+            outerPanel.add(Box.createHorizontalGlue());
+            JPanel bubble = new JPanel();
+            bubble.setOpaque(true);
+            bubble.setBackground(new JBColor(new Color(16, 142, 233), new Color(52, 139, 255)));
+            bubble.setBorder(BorderFactory.createEmptyBorder(12, 0, 12, 0)); // 只上下padding
+            bubble.setLayout(new BoxLayout(bubble, BoxLayout.X_AXIS));
+            JLabel label = new JLabel("<html>" + content.replace("\n", "<br>") + "</html>");
+            label.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 15));
+            label.setForeground(Color.WHITE);
+            bubble.add(label);
+            outerPanel.add(bubble);
+        } else if (content.trim().startsWith("package ") || content.trim().contains("class ") || content.trim().contains("interface ") || content.trim().contains("enum ")) {
+            // 代码消息：直接铺满，无外层panel/padding
+            EditorFactory editorFactory = EditorFactory.getInstance();
+            Document document = editorFactory.createDocument(content);
+            Editor editor = editorFactory.createEditor(document, project, JavaFileType.INSTANCE, true);
+            EditorEx editorEx = (EditorEx) editor;
+            EditorSettings settings = editor.getSettings();
+            settings.setFoldingOutlineShown(false);
+            settings.setLineNumbersShown(false);
+            settings.setLineMarkerAreaShown(false);
+            settings.setIndentGuidesShown(false);
+            settings.setGutterIconsShown(false);
+            settings.setRightMarginShown(false);
+            settings.setAdditionalColumnsCount(0);
+            settings.setAdditionalLinesCount(0);
+            settings.setUseSoftWraps(true);
+            EditorColorsScheme colorsScheme = EditorColorsManager.getInstance().getGlobalScheme();
+            editorEx.setColorsScheme(colorsScheme);
+            editorEx.setBackgroundColor(new JBColor(new Color(250, 250, 250), new Color(40, 44, 50)));
+            editorEx.getColorsScheme().setEditorFontName("JetBrains Mono");
+            JComponent editorComponent = editor.getComponent();
+            // 不设置preferred/min/max size，直接自适应
+            message.setEditor(editor);
+            outerPanel.add(editorComponent);
+            // 按钮右下角浮动
+            JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+            buttonPanel.setOpaque(false);
+            JButton copyButton = createStyledButton("📋 复制代码", new JBColor(new Color(22, 119, 255), new Color(52, 139, 255)));
+            copyButton.addActionListener(e -> copyToClipboard(content));
+            buttonPanel.add(copyButton);
+            JButton generateButton = createStyledButton("✨ 生成Java文件", new JBColor(new Color(40, 167, 69), new Color(60, 187, 89)));
+            generateButton.addActionListener(e -> {
+                CodeGenerationService codeGenService = CodeGenerationService.getInstance(project);
+                if (codeGenService.generateJavaFile(content, true)) {
+                    generateButton.setText("✓ 已生成");
+                    generateButton.setEnabled(false);
+                }
+            });
+            buttonPanel.add(generateButton);
+            outerPanel.add(buttonPanel);
+        } else {
+            // AI普通消息：靠左灰色圆角气泡
+            JPanel bubble = new JPanel();
+            bubble.setOpaque(true);
+            bubble.setBackground(new JBColor(new Color(245, 247, 250), new Color(60, 60, 60)));
+            bubble.setBorder(BorderFactory.createEmptyBorder(12, 0, 12, 0)); // 只上下padding
+            bubble.setLayout(new BoxLayout(bubble, BoxLayout.X_AXIS));
+            JLabel label = new JLabel("<html>" + content.replace("\n", "<br>") + "</html>");
+            label.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 15));
+            label.setForeground(new JBColor(new Color(33, 33, 33), new Color(220, 220, 220)));
+            bubble.add(label);
+            outerPanel.add(bubble);
+            outerPanel.add(Box.createHorizontalGlue());
+        }
+        return outerPanel;
     }
     
     private JButton createStyledButton(String text, Color bgColor) {
