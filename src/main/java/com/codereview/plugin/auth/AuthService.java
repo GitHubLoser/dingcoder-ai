@@ -17,6 +17,7 @@ import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  * 认证服务类 
@@ -326,8 +327,9 @@ public final class AuthService {
                 log.info("开始为用户 {} (userSid: {}) 启动MQTT连接", username, userSid);
                 MQTTService mqttService = MQTTService.getInstance();
                 
-                //
-                mqttService.connectAndSubscribe(username, userSid, null);
+                // 获取已经设置的callback
+                Consumer<String> existingCallback = mqttService.getMessageCallback();
+                mqttService.connectAndSubscribe(username, userSid, existingCallback);
                 
                 log.info("MQTT连接启动成功");
             } catch (Exception e) {

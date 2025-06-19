@@ -200,4 +200,11 @@ public final class MQTTService {
     public String getCurrentTopic() {
         return currentTopic;
     }
+
+    /**
+     * 获取当前消息回调函数
+     */
+    public Consumer<String> getMessageCallback() {
+        return messageCallback;
+    }
 }
