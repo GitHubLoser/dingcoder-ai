@@ -453,18 +453,6 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             chatPanel.add(createMessagePanel(message));
         }
         
-        // 如果有Java代码消息，添加批量生成按钮
-        boolean hasJavaCode = chatMessages.stream()
-            .filter(msg -> !msg.isUser())
-            .anyMatch(msg -> {
-                String content = msg.getContent();
-                return content != null && (content.contains("class ") || content.contains("interface ") || content.contains("enum "));
-            });
-        
-        if (hasJavaCode) {
-            addBatchGenerateButton();
-        }
-        
         // 刷新UI
         chatPanel.revalidate();
         chatPanel.repaint();
@@ -491,14 +479,14 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             JPanel bubble = new JPanel();
             bubble.setOpaque(true);
             bubble.setBackground(new JBColor(new Color(232, 244, 253), new Color(40, 50, 60)));
-            bubble.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16)); // 添加左右padding
+            bubble.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
             bubble.setLayout(new BoxLayout(bubble, BoxLayout.X_AXIS));
             JLabel label = new JLabel(content);
             label.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 16));
             label.setForeground(new JBColor(new Color(33, 150, 243), new Color(120, 170, 255)));
             bubble.add(label);
             outerPanel.add(bubble);
-            outerPanel.add(Box.createHorizontalGlue()); // 添加弹性空间使其左对齐
+            outerPanel.add(Box.createHorizontalGlue());
             return outerPanel;
         }
 
@@ -647,11 +635,11 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     }
     
     private void addBatchGenerateButton() {
-        // 检查是否已经添加了批量生成按钮
+        // 先移除已存在的批量生成按钮（如果有的话）
         Component[] components = chatPanel.getComponents();
         for (Component component : components) {
             if (component instanceof JPanel && component.getName() != null && component.getName().equals("batchGeneratePanel")) {
-                return; // 按钮已存在，不重复添加
+                chatPanel.remove(component);
             }
         }
         
@@ -717,6 +705,10 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                     chatScrollPane.setViewportView(chatPanel);
                 }
                 
+                // 添加助手消息
+                LOG.info("添加助手消息到面板");
+                addAssistantMessage(message);
+                
                 // 检查是否是"所有代码均已生成"消息
                 if ("所有代码均已生成".equals(message.trim())) {
                     LOG.info("收到生成完成消息，恢复发送按钮");
@@ -724,15 +716,22 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                     isWaitingForGeneration = false;
                     sendButton.setEnabled(true);
                     sendButton.setText("发送");
-                }
-                
-                // 添加助手消息
-                LOG.info("添加助手消息到面板");
-                addAssistantMessage(message);
-                
-                // 添加批量生成按钮（如果有Java代码）
-                if (message.contains("class ") || message.contains("interface ") || message.contains("enum ")) {
-                    addBatchGenerateButton();
+                    
+                    // 检查是否有Java代码消息，如果有则显示批量生成按钮
+                    boolean hasJavaCode = chatMessages.stream()
+                        .filter(msg -> !msg.isUser())
+                        .anyMatch(msg -> {
+                            String content = msg.getContent();
+                            return content != null && 
+                                   (content.contains("class ") || 
+                                    content.contains("interface ") || 
+                                    content.contains("enum ")) &&
+                                   content.trim().startsWith("package ");
+                        });
+                    
+                    if (hasJavaCode) {
+                        addBatchGenerateButton();
+                    }
                 }
                 
                 LOG.info("消息添加完成");
