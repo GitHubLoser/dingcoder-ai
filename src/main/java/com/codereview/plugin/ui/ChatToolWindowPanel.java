@@ -343,7 +343,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                 chatScrollPane.setViewportView(welcomePanel);
             }
         } else {
-            descLabel.setText("登录后可使用");
+//            descLabel.setText("登录后可使用");
             bigLoginButton.setVisible(true);
             bigLoginButton.setText("登录后可使用");
             chatScrollPane.setViewportView(welcomePanel);
@@ -389,45 +389,28 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     }
     
     private void onSendMessage(ActionEvent e) {
-        String message = inputField.getText().trim();
-        if (message.isEmpty() || message.equals("输入API名称或者校验器名称")) {
+        String input = inputField.getText().trim();
+        if (input.isEmpty() || isWaitingForGeneration) {
             return;
         }
-        
-        if (!authService.isLoggedIn()) {
-            JOptionPane.showMessageDialog(this, "请先登录", "提示", JOptionPane.INFORMATION_MESSAGE);
-            return;
-        }
-        
-        // 如果正在等待生成，不允许发送新消息
-        if (isWaitingForGeneration) {
-            return;
-        }
-        
-        // 获取当前选中的目录路径
-        VirtualFile selectedDir = CodeGenerationService.getInstance(project).getCurrentSelectedDirectory();
-        String filePath = selectedDir != null ? selectedDir.getPath() : "";
-        
-        // 清空输入框
+        addUserMessage(input);
         inputField.setText("");
-        inputField.setForeground(JBColor.GRAY);
-        inputField.setText("输入API名称或者校验器名称");
-        
-        // 添加用户消息
-        addUserMessage(message);
-        
-        // 添加AI回复
-        addAssistantMessage("正在为您生成代码，请稍候...");
-        
-        // 调用验证规格API
-        validateSpecService.callValidateSpecApi(message, filePath);
-        
-        // 禁用发送按钮
         isWaitingForGeneration = true;
         sendButton.setEnabled(false);
         sendButton.setText("生成中...");
-        
-        LOG.info("已调用验证规格API，等待生成完成");
+
+        // 自动切换到消息面板
+        if (chatScrollPane.getViewport().getView() == welcomePanel) {
+            chatScrollPane.setViewportView(chatPanel);
+        }
+        // 立即插入"正在为您生成代码，请稍候..."
+        addAssistantMessage("正在为您生成代码，请稍候...");
+
+        // 获取当前选中的目录路径
+        VirtualFile selectedDir = CodeGenerationService.getInstance(project).getCurrentSelectedDirectory();
+        String filePath = selectedDir != null ? selectedDir.getPath() : "";
+        // 调用验证规格API
+        validateSpecService.callValidateSpecApi(input, filePath);
     }
     
     private void addUserMessage(String message) {
