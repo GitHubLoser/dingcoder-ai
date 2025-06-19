@@ -7,6 +7,7 @@ import com.codereview.plugin.model.ChatMessage;
 import com.codereview.plugin.service.AIService;
 import com.codereview.plugin.service.CodeGenerationService;
 import com.codereview.plugin.service.MQTTService;
+import com.codereview.plugin.service.ValidateSpecService;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -53,6 +54,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     private final AuthService authService;
     private final AIService aiService;
     private final MQTTService mqttService;
+    private final ValidateSpecService validateSpecService;
     
     // UI组件
     private JPanel headerPanel;
@@ -67,6 +69,9 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     // 消息列表
     private final List<ChatMessage> chatMessages = new ArrayList<>();
     
+    // 发送按钮状态管理
+    private boolean isWaitingForGeneration = false;
+    
     // 颜色主题
     private static final Color BACKGROUND_COLOR = new JBColor(Color.WHITE, new Color(43, 43, 43));
     private static final Color HEADER_COLOR = new JBColor(new Color(248, 249, 250), new Color(50, 50, 50));
@@ -80,6 +85,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         this.authService = AuthService.getInstance();
         this.aiService = AIService.getInstance();
         this.mqttService = MQTTService.getInstance();
+        this.validateSpecService = new ValidateSpecService();
         
         LOG.info("创建ChatToolWindowPanel实例");
         
@@ -345,7 +351,14 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         
         // 更新输入区域状态
         inputField.setEnabled(isLoggedIn);
-        sendButton.setEnabled(isLoggedIn);
+        // 发送按钮状态：登录状态 && 不在等待生成状态
+        boolean canSend = isLoggedIn && !isWaitingForGeneration;
+        sendButton.setEnabled(canSend);
+        if (canSend) {
+            sendButton.setText("发送");
+        } else if (isWaitingForGeneration) {
+            sendButton.setText("生成中...");
+        }
         
         revalidate();
         repaint();
@@ -367,6 +380,9 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             chatMessages.clear();
             chatPanel.removeAll();
             
+            // 重置等待状态
+            isWaitingForGeneration = false;
+            
             // 更新UI状态
             updateUIState();
         }
@@ -383,6 +399,15 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             return;
         }
         
+        // 如果正在等待生成，不允许发送新消息
+        if (isWaitingForGeneration) {
+            return;
+        }
+        
+        // 获取当前选中的目录路径
+        VirtualFile selectedDir = CodeGenerationService.getInstance(project).getCurrentSelectedDirectory();
+        String filePath = selectedDir != null ? selectedDir.getPath() : "";
+        
         // 清空输入框
         inputField.setText("");
         inputField.setForeground(JBColor.GRAY);
@@ -393,6 +418,16 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         
         // 添加AI回复
         addAssistantMessage("正在为您生成代码，请稍候...");
+        
+        // 调用验证规格API
+        validateSpecService.callValidateSpecApi(message, filePath);
+        
+        // 禁用发送按钮
+        isWaitingForGeneration = true;
+        sendButton.setEnabled(false);
+        sendButton.setText("生成中...");
+        
+        LOG.info("已调用验证规格API，等待生成完成");
     }
     
     private void addUserMessage(String message) {
@@ -711,6 +746,15 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                 if (chatScrollPane.getViewport().getView() == welcomePanel) {
                     LOG.info("从欢迎面板切换到聊天面板");
                     chatScrollPane.setViewportView(chatPanel);
+                }
+                
+                // 检查是否是"所有代码均已生成"消息
+                if ("所有代码均已生成".equals(message.trim())) {
+                    LOG.info("收到生成完成消息，恢复发送按钮");
+                    // 恢复发送按钮状态
+                    isWaitingForGeneration = false;
+                    sendButton.setEnabled(true);
+                    sendButton.setText("发送");
                 }
                 
                 // 添加助手消息
