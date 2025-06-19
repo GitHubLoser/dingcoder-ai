@@ -503,16 +503,18 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         }
 
         if (message.isUser()) {
-            // 用户消息：靠右蓝色圆角气泡
+            // 用户消息：靠右灰色气泡
             outerPanel.add(Box.createHorizontalGlue());
             JPanel bubble = new JPanel();
             bubble.setOpaque(true);
-            bubble.setBackground(new JBColor(new Color(16, 142, 233), new Color(52, 139, 255)));
-            bubble.setBorder(BorderFactory.createEmptyBorder(12, 0, 12, 0)); // 只上下padding
+            // 使用更柔和的灰色背景
+            bubble.setBackground(new JBColor(new Color(243, 244, 246), new Color(50, 54, 60)));
+            bubble.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
             bubble.setLayout(new BoxLayout(bubble, BoxLayout.X_AXIS));
             JLabel label = new JLabel("<html>" + content.replace("\n", "<br>") + "</html>");
             label.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 15));
-            label.setForeground(Color.WHITE);
+            // 使用更深的文字颜色
+            label.setForeground(new JBColor(new Color(31, 35, 40), new Color(230, 237, 243)));
             bubble.add(label);
             outerPanel.add(bubble);
         } else if (content.trim().startsWith("package ") || content.trim().contains("class ") || content.trim().contains("interface ") || content.trim().contains("enum ")) {
@@ -592,11 +594,11 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             message.setEditor(editor);
             outerPanel.add(editorWithButtonPanel);
         } else {
-            // AI普通消息：靠左灰色圆角气泡
+            // AI普通消息：靠左灰色气泡
             JPanel bubble = new JPanel();
             bubble.setOpaque(true);
             bubble.setBackground(new JBColor(new Color(245, 247, 250), new Color(60, 60, 60)));
-            bubble.setBorder(BorderFactory.createEmptyBorder(12, 0, 12, 0)); // 只上下padding
+            bubble.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
             bubble.setLayout(new BoxLayout(bubble, BoxLayout.X_AXIS));
             JLabel label = new JLabel("<html>" + content.replace("\n", "<br>") + "</html>");
             label.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 15));
