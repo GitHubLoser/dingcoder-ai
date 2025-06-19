@@ -451,7 +451,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         JPanel outerPanel = new JPanel();
         outerPanel.setLayout(new BoxLayout(outerPanel, BoxLayout.X_AXIS));
         outerPanel.setOpaque(false);
-        outerPanel.setBorder(JBUI.Borders.empty(6, 0, 6, 0));
+        outerPanel.setBorder(JBUI.Borders.empty(2, 0, 2, 0));
 
         String content = message.getContent();
         boolean isSpecialMessage = "正在为您生成代码，请稍候...".equals(content.trim()) || 
