@@ -19,6 +19,16 @@ import java.awt.event.KeyEvent;
 import java.util.ArrayList;
 import java.util.List;
 
+// 添加编辑器相关的import
+import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.EditorFactory;
+import com.intellij.openapi.editor.EditorSettings;
+import com.intellij.openapi.editor.ex.EditorEx;
+import com.intellij.openapi.editor.colors.EditorColorsManager;
+import com.intellij.openapi.editor.colors.EditorColorsScheme;
+import com.intellij.ide.highlighter.JavaFileType;
+
 /**
  * 聊天界面
  */
@@ -431,21 +441,56 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         if (message.isUser()) {
             messagePanel.setBackground(USER_BUBBLE_COLOR);
             containerPanel.add(messagePanel, BorderLayout.EAST);
+            
+            // 用户消息使用普通文本区域
+            JTextArea textArea = new JTextArea(message.getContent());
+            textArea.setOpaque(false);
+            textArea.setEditable(false);
+            textArea.setLineWrap(true);
+            textArea.setWrapStyleWord(true);
+            textArea.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
+            textArea.setForeground(Color.WHITE);
+            messagePanel.add(textArea);
         } else {
             messagePanel.setBackground(ASSISTANT_BUBBLE_COLOR);
             containerPanel.add(messagePanel, BorderLayout.WEST);
+            
+            // AI回复可能包含代码，使用Editor组件
+            String content = message.getContent();
+            
+            // 创建编辑器
+            EditorFactory editorFactory = EditorFactory.getInstance();
+            Document document = editorFactory.createDocument(content);
+            Editor editor = editorFactory.createEditor(document, project, JavaFileType.INSTANCE, true);
+            
+            // 配置编辑器设置
+            EditorEx editorEx = (EditorEx) editor;
+            EditorSettings settings = editor.getSettings();
+            settings.setFoldingOutlineShown(false);
+            settings.setLineNumbersShown(false);
+            settings.setLineMarkerAreaShown(false);
+            settings.setIndentGuidesShown(false);
+            settings.setGutterIconsShown(false);
+            settings.setRightMarginShown(false);
+            settings.setAdditionalColumnsCount(0);
+            settings.setAdditionalLinesCount(0);
+            settings.setUseSoftWraps(true);
+            
+            // 使用当前主题的配色
+            EditorColorsScheme colorsScheme = EditorColorsManager.getInstance().getGlobalScheme();
+            editorEx.setColorsScheme(colorsScheme);
+            
+            // 设置背景色为透明
+            editorEx.setBackgroundColor(ASSISTANT_BUBBLE_COLOR);
+            
+            // 添加编辑器组件到消息面板
+            JComponent editorComponent = editor.getComponent();
+            editorComponent.setPreferredSize(new Dimension(550, Math.min(400, editor.getDocument().getLineCount() * 20)));
+            messagePanel.add(editorComponent);
+            
+            // 在ChatMessage类中保存editor引用，以便后续dispose
+            message.setEditor(editor);
         }
-        
-        // 消息内容
-        JTextArea textArea = new JTextArea(message.getContent());
-        textArea.setOpaque(false);
-        textArea.setEditable(false);
-        textArea.setLineWrap(true);
-        textArea.setWrapStyleWord(true);
-        textArea.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
-        textArea.setForeground(message.isUser() ? Color.WHITE : UIUtil.getLabelForeground());
-        
-        messagePanel.add(textArea);
         
         return containerPanel;
     }
@@ -475,6 +520,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     private static class ChatMessage {
         private final String content;
         private final boolean isUser;
+        private Editor editor; // 添加editor字段
         
         public ChatMessage(String content, boolean isUser) {
             this.content = content;
@@ -488,12 +534,26 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         public boolean isUser() {
             return isUser;
         }
+        
+        public void setEditor(Editor editor) {
+            this.editor = editor;
+        }
+        
+        public Editor getEditor() {
+            return editor;
+        }
     }
     
     /**
      * 释放资源
      */
     public void dispose() {
+        // 释放所有编辑器
+        for (ChatMessage message : chatMessages) {
+            if (!message.isUser() && message.getEditor() != null) {
+                EditorFactory.getInstance().releaseEditor(message.getEditor());
+            }
+        }
         // 清空消息
         chatMessages.clear();
         chatPanel.removeAll();
