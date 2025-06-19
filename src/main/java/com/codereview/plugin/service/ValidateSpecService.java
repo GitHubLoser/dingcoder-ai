@@ -43,7 +43,7 @@ public class ValidateSpecService {
             // 添加用户登录后的token
             String token = authService.getToken();
             if (token != null) {
-                headers.add("Authorization", "Bearer " + token);
+                headers.add("token" , token);
             }
             
             // 构建请求体
