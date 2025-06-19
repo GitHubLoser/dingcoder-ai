@@ -487,19 +487,18 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                                  "所有代码均已生成".equals(content.trim());
 
         if (isSpecialMessage) {
-            // 特殊消息：居中淡蓝色圆角气泡
+            // 特殊消息：左对齐淡蓝色气泡
             JPanel bubble = new JPanel();
             bubble.setOpaque(true);
             bubble.setBackground(new JBColor(new Color(232, 244, 253), new Color(40, 50, 60)));
-            bubble.setBorder(BorderFactory.createEmptyBorder(12, 0, 12, 0)); // 只上下padding
+            bubble.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16)); // 添加左右padding
             bubble.setLayout(new BoxLayout(bubble, BoxLayout.X_AXIS));
             JLabel label = new JLabel(content);
             label.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 16));
             label.setForeground(new JBColor(new Color(33, 150, 243), new Color(120, 170, 255)));
-            bubble.add(Box.createHorizontalGlue());
             bubble.add(label);
-            bubble.add(Box.createHorizontalGlue());
             outerPanel.add(bubble);
+            outerPanel.add(Box.createHorizontalGlue()); // 添加弹性空间使其左对齐
             return outerPanel;
         }
 
@@ -517,7 +516,11 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             bubble.add(label);
             outerPanel.add(bubble);
         } else if (content.trim().startsWith("package ") || content.trim().contains("class ") || content.trim().contains("interface ") || content.trim().contains("enum ")) {
-            // 代码消息：直接铺满，无外层panel/padding
+            // 代码消息：创建一个包含编辑器和按钮的容器
+            JPanel codeContainer = new JPanel(new BorderLayout());
+            codeContainer.setOpaque(false);
+
+            // 创建代码编辑器
             EditorFactory editorFactory = EditorFactory.getInstance();
             Document document = editorFactory.createDocument(content);
             Editor editor = editorFactory.createEditor(document, project, JavaFileType.INSTANCE, true);
@@ -536,26 +539,58 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             editorEx.setColorsScheme(colorsScheme);
             editorEx.setBackgroundColor(new JBColor(new Color(250, 250, 250), new Color(40, 44, 50)));
             editorEx.getColorsScheme().setEditorFontName("JetBrains Mono");
-            JComponent editorComponent = editor.getComponent();
-            // 不设置preferred/min/max size，直接自适应
-            message.setEditor(editor);
-            outerPanel.add(editorComponent);
-            // 按钮右下角浮动
-            JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-            buttonPanel.setOpaque(false);
-            JButton copyButton = createStyledButton("📋 复制代码", new JBColor(new Color(22, 119, 255), new Color(52, 139, 255)));
-            copyButton.addActionListener(e -> copyToClipboard(content));
-            buttonPanel.add(copyButton);
-            JButton generateButton = createStyledButton("✨ 生成Java文件", new JBColor(new Color(40, 167, 69), new Color(60, 187, 89)));
+            
+            // 创建一个面板来包含编辑器和生成按钮
+            JPanel editorWithButtonPanel = new JPanel(new BorderLayout());
+            editorWithButtonPanel.setOpaque(false);
+            
+            // 创建生成按钮
+            JButton generateButton = new JButton("生成Java文件");
+            generateButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 13));
+            generateButton.setForeground(new JBColor(Color.WHITE, Color.WHITE));
+            generateButton.setBackground(new JBColor(new Color(0x2B5AB8), new Color(0x2B5AB8)));
+            generateButton.setBorder(BorderFactory.createEmptyBorder(6, 12, 6, 12));
+            generateButton.setFocusPainted(false);
+            generateButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            generateButton.setOpaque(true);
+            
             generateButton.addActionListener(e -> {
                 CodeGenerationService codeGenService = CodeGenerationService.getInstance(project);
                 if (codeGenService.generateJavaFile(content, true)) {
                     generateButton.setText("✓ 已生成");
                     generateButton.setEnabled(false);
+                    generateButton.setBackground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
                 }
             });
+            
+            // 添加鼠标悬停效果
+            generateButton.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseEntered(MouseEvent e) {
+                    if (generateButton.isEnabled()) {
+                        generateButton.setBackground(new JBColor(new Color(0x234A94), new Color(0x234A94)));
+                    }
+                }
+                
+                @Override
+                public void mouseExited(MouseEvent e) {
+                    if (generateButton.isEnabled()) {
+                        generateButton.setBackground(new JBColor(new Color(0x2B5AB8), new Color(0x2B5AB8)));
+                    }
+                }
+            });
+            
+            // 创建按钮容器并设置为左上角
+            JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+            buttonPanel.setOpaque(false);
             buttonPanel.add(generateButton);
-            outerPanel.add(buttonPanel);
+            
+            // 将编辑器和按钮添加到面板
+            editorWithButtonPanel.add(editor.getComponent(), BorderLayout.CENTER);
+            editorWithButtonPanel.add(buttonPanel, BorderLayout.NORTH);
+            
+            message.setEditor(editor);
+            outerPanel.add(editorWithButtonPanel);
         } else {
             // AI普通消息：靠左灰色圆角气泡
             JPanel bubble = new JPanel();
@@ -575,12 +610,13 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     
     private JButton createStyledButton(String text, Color bgColor) {
         JButton button = new JButton(text);
-        button.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
-        button.setForeground(Color.WHITE);
+        button.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 13));
+        button.setForeground(JBColor.WHITE);
         button.setBackground(bgColor);
-        button.setBorder(new EmptyBorder(6, 12, 6, 12));
+        button.setBorder(BorderFactory.createEmptyBorder(6, 12, 6, 12));
         button.setFocusPainted(false);
         button.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        button.setOpaque(true);
         
         // 添加悬停效果
         button.addMouseListener(new MouseAdapter() {
@@ -618,76 +654,43 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         }
         
         // 创建批量生成按钮面板
-        JPanel batchGeneratePanel = new JBPanel<>(new FlowLayout(FlowLayout.RIGHT, 16, 16));
+        JPanel batchGeneratePanel = new JBPanel<>(new FlowLayout(FlowLayout.LEFT, 16, 16));
         batchGeneratePanel.setName("batchGeneratePanel");
         batchGeneratePanel.setOpaque(false);
-        batchGeneratePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 80));
-        batchGeneratePanel.setBorder(JBUI.Borders.empty(16, 16, 16, 16));
+        batchGeneratePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 60));
+        batchGeneratePanel.setBorder(JBUI.Borders.empty(8, 16, 8, 16));
         
-        // 创建一个容器面板，用于添加渐变背景和阴影
-        JPanel buttonContainer = new JBPanel() {
-            @Override
-            protected void paintComponent(Graphics g) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                
-                // 创建渐变背景
-                GradientPaint gradient = new GradientPaint(
-                    0, 0, new Color(40, 167, 69),
-                    getWidth(), getHeight(), new Color(33, 136, 56)
-                );
-                g2.setPaint(gradient);
-                
-                // 绘制圆角矩形
-                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 8, 8);
-                g2.dispose();
-            }
-        };
-        buttonContainer.setLayout(new BorderLayout());
-        buttonContainer.setOpaque(false);
-        buttonContainer.setBorder(new CompoundBorder(
-            new DropShadowBorder(new Color(0, 0, 0, 50), 5, 3, 0.5f),
-            JBUI.Borders.empty(2)
-        ));
-        
-        // 批量生成按钮
-        JButton batchGenerateButton = new JButton("🚀 批量生成全部") {
-            @Override
-            public void updateUI() {
-                super.updateUI();
-                setContentAreaFilled(false);
-                setBorderPainted(false);
-                setFocusPainted(false);
-            }
-        };
-        batchGenerateButton.setForeground(JBColor.WHITE);
-        batchGenerateButton.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 14));
+        // 创建批量生成按钮
+        JButton batchGenerateButton = new JButton("批量生成全部文件");
+        batchGenerateButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 13));
+        batchGenerateButton.setForeground(new JBColor(Color.WHITE, Color.WHITE));
+        batchGenerateButton.setBackground(new JBColor(new Color(0x2B5AB8), new Color(0x2B5AB8)));
+        batchGenerateButton.setBorder(BorderFactory.createEmptyBorder(6, 12, 6, 12));
+        batchGenerateButton.setFocusPainted(false);
         batchGenerateButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        batchGenerateButton.addActionListener(e -> batchGenerateAllFiles());
+        batchGenerateButton.setOpaque(true);
         
         // 添加鼠标悬停效果
         batchGenerateButton.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseEntered(MouseEvent e) {
-                buttonContainer.setBackground(new Color(33, 136, 56));
-                buttonContainer.repaint();
+                batchGenerateButton.setBackground(new JBColor(new Color(0x234A94), new Color(0x234A94)));
             }
             
             @Override
             public void mouseExited(MouseEvent e) {
-                buttonContainer.setBackground(new Color(40, 167, 69));
-                buttonContainer.repaint();
+                batchGenerateButton.setBackground(new JBColor(new Color(0x2B5AB8), new Color(0x2B5AB8)));
             }
         });
         
-        // 设置按钮和容器的大小
-        Dimension buttonSize = new Dimension(180, 36);
-        batchGenerateButton.setPreferredSize(buttonSize);
-        buttonContainer.setPreferredSize(buttonSize);
+        batchGenerateButton.addActionListener(e -> batchGenerateAllFiles());
         
-        // 组装按钮
-        buttonContainer.add(batchGenerateButton, BorderLayout.CENTER);
-        batchGeneratePanel.add(buttonContainer);
+        // 设置按钮大小
+        Dimension buttonSize = new Dimension(150, 32);
+        batchGenerateButton.setPreferredSize(buttonSize);
+        
+        // 添加到面板
+        batchGeneratePanel.add(batchGenerateButton);
         
         // 添加到聊天面板底部
         chatPanel.add(batchGeneratePanel);
@@ -699,49 +702,6 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             JScrollBar vertical = chatScrollPane.getVerticalScrollBar();
             vertical.setValue(vertical.getMaximum());
         });
-    }
-    
-    // 添加一个自定义的阴影边框类
-    private static class DropShadowBorder extends AbstractBorder {
-        private final Color shadowColor;
-        private final int shadowSize;
-        private final int shadowOffset;
-        private final float shadowOpacity;
-        
-        public DropShadowBorder(Color shadowColor, int shadowSize, int shadowOffset, float shadowOpacity) {
-            this.shadowColor = shadowColor;
-            this.shadowSize = shadowSize;
-            this.shadowOffset = shadowOffset;
-            this.shadowOpacity = shadowOpacity;
-        }
-        
-        @Override
-        public void paintBorder(Component c, Graphics g, int x, int y, int width, int height) {
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            
-            // 创建阴影效果
-            int shadowGap = shadowSize - shadowOffset;
-            Color[] shadow = new Color[shadowSize];
-            for (int i = 0; i < shadowSize; i++) {
-                shadow[i] = new Color(shadowColor.getRed(), shadowColor.getGreen(), 
-                    shadowColor.getBlue(), (int)((1.0f - ((float)i / shadowSize)) * 255 * shadowOpacity));
-            }
-            
-            // 绘制阴影
-            for (int i = 0; i < shadowSize; i++) {
-                g2.setColor(shadow[i]);
-                g2.drawRoundRect(x + shadowOffset + i, y + shadowOffset + i, 
-                    width - ((shadowOffset * 2) + i + 1), 
-                    height - ((shadowOffset * 2) + i + 1), 8, 8);
-            }
-            g2.dispose();
-        }
-        
-        @Override
-        public Insets getBorderInsets(Component c) {
-            return new Insets(shadowSize, shadowSize, shadowSize + shadowOffset, shadowSize + shadowOffset);
-        }
     }
     
     private void onMQTTMessage(String message) {

@@ -98,30 +98,20 @@ public final class CodeGenerationService {
                     // 创建包目录（如果代码中有包声明）
                     VirtualFile packageDir = finalDir;
                     String packageName = extractPackageName(javaCode);
-                    if (packageName != null && !packageName.isEmpty()) {
-                        // 询问用户是否要创建包目录结构
+                    // 注释掉创建包目录的功能
+                    /*if (packageName != null && !packageName.isEmpty()) {
                         if (showDialog) {
-                            int result = JOptionPane.showConfirmDialog(
-                                null,
-                                "检测到包声明: " + packageName + "\n是否要创建对应的包目录结构？",
-                                "包目录确认",
-                                JOptionPane.YES_NO_OPTION,
-                                JOptionPane.QUESTION_MESSAGE
-                            );
-                            if (result == JOptionPane.YES_OPTION) {
-                                String[] packageParts = packageName.split("\\.");
-                                for (String part : packageParts) {
-                                    packageDir = createDirectoryIfNotExists(packageDir, part);
-                                }
+                            String[] packageParts = packageName.split("\\.");
+                            for (String part : packageParts) {
+                                packageDir = createDirectoryIfNotExists(packageDir, part);
                             }
                         } else {
-                            // 批量生成时自动创建包目录
                             String[] packageParts = packageName.split("\\.");
                             for (String part : packageParts) {
                                 packageDir = createDirectoryIfNotExists(packageDir, part);
                             }
                         }
-                    }
+                    }*/
                     
                     // 创建Java文件
                     String fileName = className + ".java";
