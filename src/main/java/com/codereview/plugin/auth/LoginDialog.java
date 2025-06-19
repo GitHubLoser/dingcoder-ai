@@ -69,7 +69,7 @@ public class LoginDialog extends DialogWrapper {
         gbc.gridy = 2;
         gbc.gridwidth = 2;
         gbc.insets = new Insets(10, 5, 5, 5);
-        JBLabel infoLabel = new JBLabel("注意: 当前演示版本使用 'demo/password' 作为登录凭证");
+        JBLabel infoLabel = new JBLabel("注意: 使用 '邮箱/密码' 作为登录凭证");
         infoLabel.setForeground(Color.GRAY);
         panel.add(infoLabel, gbc);
         
