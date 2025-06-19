@@ -250,7 +250,7 @@ public final class CodeGenerationService {
     /**
      * 获取当前在项目视图中选中的目录
      */
-    private @Nullable VirtualFile getCurrentSelectedDirectory() {
+    public @Nullable VirtualFile getCurrentSelectedDirectory() {
         try {
             ProjectView projectView = ProjectView.getInstance(project);
             if (projectView != null) {

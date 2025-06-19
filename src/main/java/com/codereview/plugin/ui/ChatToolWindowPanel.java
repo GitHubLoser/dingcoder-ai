@@ -2,20 +2,34 @@ package com.codereview.plugin.ui;
 
 import com.codereview.plugin.auth.AuthService;
 import com.codereview.plugin.auth.LoginDialog;
+import com.codereview.plugin.constant.CommonConstant;
+import com.codereview.plugin.model.ChatMessage;
 import com.codereview.plugin.service.AIService;
+import com.codereview.plugin.service.CodeGenerationService;
 import com.codereview.plugin.service.MQTTService;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.components.*;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
+import org.eclipse.paho.client.mqttv3.MqttMessage;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.border.AbstractBorder;
+import javax.swing.border.Border;
+import javax.swing.border.CompoundBorder;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.StringSelection;
+import java.awt.Toolkit;
+import java.awt.Cursor;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -124,35 +138,34 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         headerPanel.add(leftPanel, BorderLayout.WEST);
         
         // 右侧用户区域
-        JPanel userPanel = new JBPanel<>(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-        userPanel.setOpaque(false);
+        JPanel rightPanel = new JBPanel<>(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        rightPanel.setOpaque(false);
         
         // 用户下拉框（登录后显示）
         userDropdown = new JComboBox<>();
         userDropdown.setPreferredSize(new Dimension(150, 32));
         userDropdown.setVisible(false);
         userDropdown.addActionListener(this::onUserDropdownAction);
+        rightPanel.add(userDropdown);
         
         // 登录按钮（未登录时显示）
         loginButton = new JButton("登录");
         loginButton.setPreferredSize(new Dimension(80, 32));
         loginButton.addActionListener(this::onLoginButtonClick);
+        rightPanel.add(loginButton);
         
-        userPanel.add(userDropdown);
-        userPanel.add(loginButton);
-        headerPanel.add(userPanel, BorderLayout.EAST);
+        headerPanel.add(rightPanel, BorderLayout.EAST);
     }
     
     private void createChatArea() {
+        // 创建聊天面板
         chatPanel = new JBPanel<>();
         chatPanel.setLayout(new BoxLayout(chatPanel, BoxLayout.Y_AXIS));
         chatPanel.setBackground(BACKGROUND_COLOR);
-        chatPanel.setBorder(JBUI.Borders.empty(16));
         
-        chatScrollPane = new JBScrollPane(chatPanel);
+        // 创建滚动面板
+        chatScrollPane = new JBScrollPane(welcomePanel);
         chatScrollPane.setBorder(null);
-        chatScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
-        chatScrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         chatScrollPane.getVerticalScrollBar().setUnitIncrement(16);
     }
     
@@ -397,35 +410,35 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     }
     
     private void updateChatDisplay() {
-        LOG.info("开始更新聊天显示");
-        // 切换到聊天面板
-        if (chatScrollPane.getViewport().getView() != chatPanel) {
-            LOG.info("切换到聊天面板");
-            chatScrollPane.setViewportView(chatPanel);
-        }
-        
         // 清空聊天面板
         chatPanel.removeAll();
         
-        // 添加所有消息
-        LOG.info("添加 " + chatMessages.size() + " 条消息到面板");
+        // 重新添加所有消息
         for (ChatMessage message : chatMessages) {
-            JPanel messagePanel = createMessagePanel(message);
-            chatPanel.add(messagePanel);
-            chatPanel.add(Box.createVerticalStrut(8));
+            chatPanel.add(createMessagePanel(message));
         }
         
-        // 刷新面板
+        // 如果有Java代码消息，添加批量生成按钮
+        boolean hasJavaCode = chatMessages.stream()
+            .filter(msg -> !msg.isUser())
+            .anyMatch(msg -> {
+                String content = msg.getContent();
+                return content != null && (content.contains("class ") || content.contains("interface ") || content.contains("enum "));
+            });
+        
+        if (hasJavaCode) {
+            addBatchGenerateButton();
+        }
+        
+        // 刷新UI
         chatPanel.revalidate();
         chatPanel.repaint();
         
         // 滚动到底部
         SwingUtilities.invokeLater(() -> {
-            LOG.info("滚动到底部");
-            JScrollBar verticalScrollBar = chatScrollPane.getVerticalScrollBar();
-            verticalScrollBar.setValue(verticalScrollBar.getMaximum());
+            JScrollBar vertical = chatScrollPane.getVerticalScrollBar();
+            vertical.setValue(vertical.getMaximum());
         });
-        LOG.info("聊天显示更新完成");
     }
     
     private JPanel createMessagePanel(ChatMessage message) {
@@ -490,9 +503,203 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             
             // 在ChatMessage类中保存editor引用，以便后续dispose
             message.setEditor(editor);
+            
+            // 添加按钮面板
+            JPanel buttonPanel = new JBPanel<>(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+            buttonPanel.setOpaque(false);
+            
+            // 复制按钮
+            JButton copyButton = createStyledButton("📋 复制代码", new JBColor(new Color(22, 119, 255), new Color(52, 139, 255)));
+            copyButton.addActionListener(e -> copyToClipboard(content));
+            buttonPanel.add(copyButton);
+            
+            // 生成Java文件按钮
+            JButton generateButton = createStyledButton("✨ 生成Java文件", new JBColor(new Color(40, 167, 69), new Color(60, 187, 89)));
+            generateButton.addActionListener(e -> {
+                CodeGenerationService codeGenService = CodeGenerationService.getInstance(project);
+                if (codeGenService.generateJavaFile(content, true)) {
+                    generateButton.setText("✓ 已生成");
+                    generateButton.setEnabled(false);
+                }
+            });
+            buttonPanel.add(generateButton);
+            
+            messagePanel.add(Box.createVerticalStrut(8));
+            messagePanel.add(buttonPanel);
         }
         
         return containerPanel;
+    }
+    
+    private JButton createStyledButton(String text, Color bgColor) {
+        JButton button = new JButton(text);
+        button.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
+        button.setForeground(Color.WHITE);
+        button.setBackground(bgColor);
+        button.setBorder(new EmptyBorder(6, 12, 6, 12));
+        button.setFocusPainted(false);
+        button.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        
+        // 添加悬停效果
+        button.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                button.setBackground(bgColor.darker());
+            }
+            
+            @Override
+            public void mouseExited(MouseEvent e) {
+                button.setBackground(bgColor);
+            }
+        });
+        
+        return button;
+    }
+    
+    private void copyToClipboard(String text) {
+        try {
+            StringSelection selection = new StringSelection(text);
+            Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+            clipboard.setContents(selection, selection);
+        } catch (Exception e) {
+            LOG.error("复制到剪贴板失败", e);
+        }
+    }
+    
+    private void addBatchGenerateButton() {
+        // 检查是否已经添加了批量生成按钮
+        Component[] components = chatPanel.getComponents();
+        for (Component component : components) {
+            if (component instanceof JPanel && component.getName() != null && component.getName().equals("batchGeneratePanel")) {
+                return; // 按钮已存在，不重复添加
+            }
+        }
+        
+        // 创建批量生成按钮面板
+        JPanel batchGeneratePanel = new JBPanel<>(new FlowLayout(FlowLayout.RIGHT, 16, 16));
+        batchGeneratePanel.setName("batchGeneratePanel");
+        batchGeneratePanel.setOpaque(false);
+        batchGeneratePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 80));
+        batchGeneratePanel.setBorder(JBUI.Borders.empty(16, 16, 16, 16));
+        
+        // 创建一个容器面板，用于添加渐变背景和阴影
+        JPanel buttonContainer = new JBPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                
+                // 创建渐变背景
+                GradientPaint gradient = new GradientPaint(
+                    0, 0, new Color(40, 167, 69),
+                    getWidth(), getHeight(), new Color(33, 136, 56)
+                );
+                g2.setPaint(gradient);
+                
+                // 绘制圆角矩形
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 8, 8);
+                g2.dispose();
+            }
+        };
+        buttonContainer.setLayout(new BorderLayout());
+        buttonContainer.setOpaque(false);
+        buttonContainer.setBorder(new CompoundBorder(
+            new DropShadowBorder(new Color(0, 0, 0, 50), 5, 3, 0.5f),
+            JBUI.Borders.empty(2)
+        ));
+        
+        // 批量生成按钮
+        JButton batchGenerateButton = new JButton("🚀 批量生成全部") {
+            @Override
+            public void updateUI() {
+                super.updateUI();
+                setContentAreaFilled(false);
+                setBorderPainted(false);
+                setFocusPainted(false);
+            }
+        };
+        batchGenerateButton.setForeground(JBColor.WHITE);
+        batchGenerateButton.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 14));
+        batchGenerateButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        batchGenerateButton.addActionListener(e -> batchGenerateAllFiles());
+        
+        // 添加鼠标悬停效果
+        batchGenerateButton.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                buttonContainer.setBackground(new Color(33, 136, 56));
+                buttonContainer.repaint();
+            }
+            
+            @Override
+            public void mouseExited(MouseEvent e) {
+                buttonContainer.setBackground(new Color(40, 167, 69));
+                buttonContainer.repaint();
+            }
+        });
+        
+        // 设置按钮和容器的大小
+        Dimension buttonSize = new Dimension(180, 36);
+        batchGenerateButton.setPreferredSize(buttonSize);
+        buttonContainer.setPreferredSize(buttonSize);
+        
+        // 组装按钮
+        buttonContainer.add(batchGenerateButton, BorderLayout.CENTER);
+        batchGeneratePanel.add(buttonContainer);
+        
+        // 添加到聊天面板底部
+        chatPanel.add(batchGeneratePanel);
+        chatPanel.revalidate();
+        chatPanel.repaint();
+        
+        // 滚动到底部
+        SwingUtilities.invokeLater(() -> {
+            JScrollBar vertical = chatScrollPane.getVerticalScrollBar();
+            vertical.setValue(vertical.getMaximum());
+        });
+    }
+    
+    // 添加一个自定义的阴影边框类
+    private static class DropShadowBorder extends AbstractBorder {
+        private final Color shadowColor;
+        private final int shadowSize;
+        private final int shadowOffset;
+        private final float shadowOpacity;
+        
+        public DropShadowBorder(Color shadowColor, int shadowSize, int shadowOffset, float shadowOpacity) {
+            this.shadowColor = shadowColor;
+            this.shadowSize = shadowSize;
+            this.shadowOffset = shadowOffset;
+            this.shadowOpacity = shadowOpacity;
+        }
+        
+        @Override
+        public void paintBorder(Component c, Graphics g, int x, int y, int width, int height) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            
+            // 创建阴影效果
+            int shadowGap = shadowSize - shadowOffset;
+            Color[] shadow = new Color[shadowSize];
+            for (int i = 0; i < shadowSize; i++) {
+                shadow[i] = new Color(shadowColor.getRed(), shadowColor.getGreen(), 
+                    shadowColor.getBlue(), (int)((1.0f - ((float)i / shadowSize)) * 255 * shadowOpacity));
+            }
+            
+            // 绘制阴影
+            for (int i = 0; i < shadowSize; i++) {
+                g2.setColor(shadow[i]);
+                g2.drawRoundRect(x + shadowOffset + i, y + shadowOffset + i, 
+                    width - ((shadowOffset * 2) + i + 1), 
+                    height - ((shadowOffset * 2) + i + 1), 8, 8);
+            }
+            g2.dispose();
+        }
+        
+        @Override
+        public Insets getBorderInsets(Component c) {
+            return new Insets(shadowSize, shadowSize, shadowSize + shadowOffset, shadowSize + shadowOffset);
+        }
     }
     
     private void onMQTTMessage(String message) {
@@ -509,6 +716,12 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                 // 添加助手消息
                 LOG.info("添加助手消息到面板");
                 addAssistantMessage(message);
+                
+                // 添加批量生成按钮（如果有Java代码）
+                if (message.contains("class ") || message.contains("interface ") || message.contains("enum ")) {
+                    addBatchGenerateButton();
+                }
+                
                 LOG.info("消息添加完成");
             } catch (Exception e) {
                 LOG.error("处理MQTT消息时出错", e);
@@ -516,15 +729,85 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         });
     }
     
+    private void batchGenerateAllFiles() {
+        if (!authService.isLoggedIn()) {
+            JOptionPane.showMessageDialog(this, "请先登录", "提示", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        
+        // 确认是否要批量生成
+        int result = JOptionPane.showConfirmDialog(
+            this,
+            "确定要批量生成所有未生成的Java文件吗？",
+            "批量生成确认",
+            JOptionPane.YES_NO_OPTION,
+            JOptionPane.QUESTION_MESSAGE
+        );
+        
+        if (result != JOptionPane.YES_OPTION) {
+            return;
+        }
+        
+        // 获取当前选中的目录
+        VirtualFile targetDir = CodeGenerationService.getInstance(project).getCurrentSelectedDirectory();
+        if (targetDir == null) {
+            JOptionPane.showMessageDialog(
+                this,
+                "请在项目视图中选择一个目标目录",
+                "提示",
+                JOptionPane.INFORMATION_MESSAGE
+            );
+            return;
+        }
+        
+        // 统计成功和失败的数量
+        int[] successCount = {0};
+        int[] failCount = {0};
+        
+        // 遍历所有消息，找出包含Java代码的消息
+        for (ChatMessage message : chatMessages) {
+            if (!message.isUser() && !message.isGenerated()) {
+                String content = message.getContent();
+                if (content != null && (content.contains("class ") || content.contains("interface ") || content.contains("enum "))) {
+                    if (CodeGenerationService.getInstance(project).generateJavaFile(content, false, targetDir)) {
+                        successCount[0]++;
+                        message.setGenerated(true);
+                    } else {
+                        failCount[0]++;
+                    }
+                }
+            }
+        }
+        
+        // 显示结果
+        String resultMessage = String.format(
+            "批量生成完成：\n成功：%d个文件\n失败：%d个文件",
+            successCount[0],
+            failCount[0]
+        );
+        
+        JOptionPane.showMessageDialog(
+            this,
+            resultMessage,
+            "批量生成结果",
+            JOptionPane.INFORMATION_MESSAGE
+        );
+        
+        // 刷新UI
+        updateChatDisplay();
+    }
+    
     // 内部类：聊天消息
     private static class ChatMessage {
         private final String content;
         private final boolean isUser;
-        private Editor editor; // 添加editor字段
+        private Editor editor;
+        private boolean generated; // 添加生成状态标记
         
         public ChatMessage(String content, boolean isUser) {
             this.content = content;
             this.isUser = isUser;
+            this.generated = false;
         }
         
         public String getContent() {
@@ -541,6 +824,14 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         
         public Editor getEditor() {
             return editor;
+        }
+        
+        public boolean isGenerated() {
+            return generated;
+        }
+        
+        public void setGenerated(boolean generated) {
+            this.generated = generated;
         }
     }
     
