@@ -335,7 +335,12 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         JButton bigLoginButton = (JButton) welcomePanel.getClientProperty("bigLoginButton");
         
         if (isLoggedIn) {
-            descLabel.setText("<html><center>我是你的AI编码助手，可以帮你生成校验器的代码，<br/>只需要在输入框里输入api名称或者校验器的名称即可，<br/>多个校验器之间用分号隔开，<br/>现在就开始体验吧!</center></html>");
+            descLabel.setText("<html><center>我是你的AI编码助手，可以帮你生成校验器的代码，<br/>" +
+                    "只需要在输入框里输入api名称或者校验器的名称即可，<br/>" +
+                    "多个校验器之间用逗号隔开，例如：<br/>" +
+                    "bm.pre_item.create:VD_pre_item_00012,VD_pre_item_00015<br/>" +
+                    "现在就开始体验吧!" +
+                    "</center></html>");
             bigLoginButton.setVisible(false);
             
             // 如果没有聊天消息，显示欢迎面板
