@@ -2,6 +2,7 @@ package com.codereview.plugin.mqtt;
 
 import org.eclipse.paho.client.mqttv3.*;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
+import java.nio.charset.StandardCharsets;
 
 public class MqttSubscriber {
 
@@ -33,7 +34,7 @@ public class MqttSubscriber {
             //设置心跳时间 单位为秒，表示服务器每隔1.5*20秒的时间向客户端发送心跳判断客户端是否在线
             options.setKeepAliveInterval(20);
             //设置遗嘱消息的话题，若客户端和服务器之间的连接意外断开，服务器将发布客户端的遗嘱信息
-            options.setWill("willTopic", (clientId + "与服务器断开连接").getBytes(), 0, false);
+            options.setWill("willTopic", (clientId + "与服务器断开连接").getBytes(StandardCharsets.UTF_8), 0, false);
 
 
             // 设置回调方法
@@ -47,7 +48,7 @@ public class MqttSubscriber {
                 public void messageArrived(String topic, MqttMessage message) {
                     System.out.println("收到消息：");
                     System.out.println("  Topic: " + topic);
-                    System.out.println("  Message: " + new String(message.getPayload()));
+                    System.out.println("  Message: " + new String(message.getPayload(), StandardCharsets.UTF_8));
                 }
 
                 @Override

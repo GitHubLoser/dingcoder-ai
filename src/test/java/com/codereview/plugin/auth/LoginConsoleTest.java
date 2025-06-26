@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestTemplate;
 
 import java.io.Console;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
@@ -135,7 +136,7 @@ public class LoginConsoleTest {
                 System.out.println("步骤4: 获取AES密钥成功");
                 
                 //5.根据客户端私有解密加密的aes的key值
-                String aesKey = new String(RSAUtils.decryptByPrivateKey(Base64.decodeBase64(encryptAesKey), privateKey));
+                String aesKey = new String(RSAUtils.decryptByPrivateKey(Base64.decodeBase64(encryptAesKey), privateKey), StandardCharsets.UTF_8);
                 String passwordHash = AESUtils.aesEncryptByBase64(password, aesKey);
                 //6.登录
                 RestTemplate restTemplate = new RestTemplate();
@@ -226,8 +227,8 @@ public class LoginConsoleTest {
         KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
         generator.initialize(2048);
         KeyPair keyPair = generator.generateKeyPair();
-        String privateKey = new String(Base64.encodeBase64(keyPair.getPrivate().getEncoded()));
-        String publicKey = new String(Base64.encodeBase64(keyPair.getPublic().getEncoded()));
+        String privateKey = new String(Base64.encodeBase64(keyPair.getPrivate().getEncoded()), StandardCharsets.UTF_8);
+        String publicKey = new String(Base64.encodeBase64(keyPair.getPublic().getEncoded()), StandardCharsets.UTF_8);
         HashMap<String, String> keyMap = new HashMap<>();
         keyMap.put(CommonConstant.PRIVATE_KEY, privateKey);
         keyMap.put(CommonConstant.PUBLIC_KEY, publicKey);

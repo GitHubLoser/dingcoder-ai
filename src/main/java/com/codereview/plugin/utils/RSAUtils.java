@@ -5,6 +5,7 @@ import org.apache.commons.codec.binary.Base64;
 
 import javax.crypto.Cipher;
 import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.security.KeyFactory;
 import java.security.spec.PKCS8EncodedKeySpec;
@@ -111,7 +112,7 @@ public class RSAUtils {
     }
 
     public static String encryptByPublicKey(String data, String clientPublicKey) throws Exception {
-        data = Base64.encodeBase64String(encryptByPublicKey(data.getBytes(), clientPublicKey));
+        data = Base64.encodeBase64String(encryptByPublicKey(data.getBytes(StandardCharsets.UTF_8), clientPublicKey));
         return data;
     }
 

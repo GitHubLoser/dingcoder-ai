@@ -6,6 +6,7 @@ import org.eclipse.paho.client.mqttv3.*;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.nio.charset.StandardCharsets;
 
 import java.util.function.Consumer;
 
@@ -64,7 +65,7 @@ public final class MQTTService {
             options.setPassword(PASSWORD.toCharArray());
             options.setConnectionTimeout(100);
             options.setKeepAliveInterval(20);
-            options.setWill("willTopic", (clientId + "与服务器断开连接").getBytes(), 0, false);
+            options.setWill("willTopic", (clientId + "与服务器断开连接").getBytes(StandardCharsets.UTF_8), 0, false);
 
             // 设置回调方法
             mqttClient.setCallback(new MqttCallback() {
@@ -77,7 +78,7 @@ public final class MQTTService {
                 @Override
                 public void messageArrived(String topic, MqttMessage message) {
                     try {
-                        String content = new String(message.getPayload());
+                        String content = new String(message.getPayload(), StandardCharsets.UTF_8);
                         LOG.info("收到MQTT消息 - Topic: " + topic + ", Message: " + content);
                         LOG.info("当前回调函数状态: " + (messageCallback != null ? "已设置" : "未设置"));
 
