@@ -482,16 +482,8 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         }
         addUserMessage(input);
         inputField.setText("");
-        
-        // 重置输入框高度
-        SwingUtilities.invokeLater(() -> {
-            int initialHeight = inputField.getFontMetrics(inputField.getFont()).getHeight() + 20;
-            Dimension currentSize = inputField.getParent().getPreferredSize();
-            inputField.getParent().setPreferredSize(new Dimension(currentSize.width, initialHeight));
-            inputField.getParent().revalidate();
-            inputField.getParent().repaint();
-        });
-        
+        // 彻底移除 setPreferredSize、revalidate、repaint 相关代码
+        // 让 DocumentListener 自动调整高度
         isWaitingForGeneration = true;
         sendButton.setEnabled(false);
         sendButton.setText("生成中...");
