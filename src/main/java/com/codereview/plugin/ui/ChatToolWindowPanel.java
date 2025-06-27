@@ -33,6 +33,7 @@ import java.awt.Toolkit;
 import java.awt.Cursor;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 // 添加编辑器相关的import
 import com.intellij.openapi.editor.Document;
@@ -62,7 +63,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     private JButton loginButton;
     private JPanel chatPanel;
     private JScrollPane chatScrollPane;
-    private JTextField inputField;
+    private JTextArea inputField;
     private JButton sendButton;
     private JPanel welcomePanel;
     
@@ -79,6 +80,14 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     private static final Color ASSISTANT_BUBBLE_COLOR = new JBColor(new Color(240, 242, 247), new Color(60, 60, 60));
     private static final Color USER_BUBBLE_COLOR = new JBColor(new Color(16, 142, 233), new Color(52, 139, 255));
     
+    // 新增通义灵码风格的输入框颜色
+    private static final Color INPUT_BORDER_COLOR = new JBColor(new Color(225, 225, 225), new Color(70, 70, 70));
+    private static final Color INPUT_FOCUS_BORDER_COLOR = new JBColor(new Color(24, 144, 255), new Color(64, 169, 255));
+    private static final Color INPUT_BACKGROUND_COLOR = new JBColor(Color.WHITE, new Color(60, 60, 60));
+    private static final Color SEND_BUTTON_COLOR = new JBColor(new Color(24, 144, 255), new Color(64, 169, 255));
+    private static final Color SEND_BUTTON_HOVER_COLOR = new JBColor(new Color(40, 167, 69), new Color(52, 199, 89));
+    private static final Color SEND_BUTTON_DISABLED_COLOR = new JBColor(new Color(200, 200, 200), new Color(100, 100, 100));
+    
     public ChatToolWindowPanel(Project project) {
         super(new BorderLayout());
         this.project = project;
@@ -92,9 +101,9 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         initializeUI();
         updateUIState();
         
-        // 设置MQTT消息回调
+        // 确保MQTT消息回调总是被设置
         LOG.info("设置MQTT消息回调");
-        mqttService.setMessageCallback(this::onMQTTMessage);
+        setMqttCallback();
     }
     
     private void initializeUI() {
@@ -225,49 +234,98 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     }
     
     private void createInputArea() {
-        inputField = new JTextField();
+        // 使用JTextArea替代JTextField
+        inputField = new JTextArea();
+        inputField.setLineWrap(true);  // 启用自动换行
+        inputField.setWrapStyleWord(true);  // 按单词换行
+        inputField.setRows(1);  // 初始显示1行
+        
+        // 通义灵码风格的字体设置
+        Font inputFont = new Font("PingFang SC", Font.PLAIN, 14);
+        if (!inputFont.getFamily().equals("PingFang SC")) {
+            inputFont = new Font("Microsoft YaHei", Font.PLAIN, 14);
+        }
+        if (!inputFont.getFamily().equals("Microsoft YaHei")) {
+            inputFont = UIUtil.getLabelFont().deriveFont(14f);
+        }
+        inputField.setFont(inputFont);
+        
+        // 设置背景色和前景色
+        inputField.setBackground(INPUT_BACKGROUND_COLOR);
+        inputField.setForeground(new JBColor(Color.BLACK, Color.WHITE));
+        
+        // 设置内边距
         inputField.setBorder(JBUI.Borders.empty(12, 16));
-        inputField.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
         
-        // 设置提示文字
-        inputField.setText("输入API名称或者校验器名称");
-        inputField.setForeground(JBColor.GRAY);
+        // 设置圆角边框
+        inputField.setBorder(new RoundedBorder(8, INPUT_BORDER_COLOR, 1));
         
-        // 添加焦点监听器处理提示文字
+        // 添加焦点监听器，实现焦点时的边框颜色变化
         inputField.addFocusListener(new java.awt.event.FocusAdapter() {
             @Override
             public void focusGained(java.awt.event.FocusEvent e) {
-                if (inputField.getText().equals("输入API名称或者校验器名称")) {
-                    inputField.setText("");
-                    inputField.setForeground(UIUtil.getLabelForeground());
-                }
+                inputField.setBorder(new RoundedBorder(8, INPUT_FOCUS_BORDER_COLOR, 2));
             }
             
             @Override
             public void focusLost(java.awt.event.FocusEvent e) {
-                if (inputField.getText().trim().isEmpty()) {
-                    inputField.setText("输入API名称或者校验器名称");
-                    inputField.setForeground(JBColor.GRAY);
-                }
+                inputField.setBorder(new RoundedBorder(8, INPUT_BORDER_COLOR, 1));
             }
         });
         
-        // 添加回车键监听器
-        inputField.addActionListener(this::onSendMessage);
+        // 创建一个带滚动条的面板来包装输入框
+        JScrollPane inputScrollPane = new JBScrollPane(
+            inputField,
+            JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
+            JScrollPane.HORIZONTAL_SCROLLBAR_NEVER
+        );
+        inputScrollPane.setBorder(null);
+        inputScrollPane.setOpaque(false);
+        inputScrollPane.getViewport().setOpaque(false);
         
-        // 添加键盘监听器
-        inputField.addKeyListener(new java.awt.event.KeyAdapter() {
+        // 添加文档监听器来处理高度自适应
+        inputField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            private void adjustRows() {
+                int lines = inputField.getLineCount();
+                int minRows = 1, maxRows = 6;
+                int rows = Math.max(minRows, Math.min(maxRows, lines));
+                inputField.setRows(rows);
+                inputField.revalidate();
+            }
+            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { adjustRows(); }
+            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { adjustRows(); }
+            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { adjustRows(); }
+        });
+        
+        // 添加回车键监听
+        inputField.getInputMap().put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "sendMessage");
+        inputField.getActionMap().put("sendMessage", new AbstractAction() {
             @Override
-            public void keyPressed(KeyEvent e) {
-                if (e.getKeyCode() == KeyEvent.VK_ENTER) {
-                    onSendMessage(null);
-                }
+            public void actionPerformed(ActionEvent e) {
+                onSendMessage(e);
             }
         });
         
-        sendButton = new JButton("发送");
-        sendButton.setPreferredSize(new Dimension(60, 40));
-        sendButton.addActionListener(this::onSendMessage);
+        // Shift+Enter用于换行
+        inputField.getInputMap().put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, KeyEvent.SHIFT_DOWN_MASK), "newline");
+        inputField.getActionMap().put("newline", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                inputField.append("\n");
+            }
+        });
+        
+        // 创建发送按钮
+        sendButton = createModernSendButton();
+        
+        // 使用BorderLayout布局的面板来组织输入区域
+        JPanel inputPanel = new JPanel(new BorderLayout(5, 0));
+        inputPanel.setBorder(JBUI.Borders.empty(5));
+        inputPanel.add(inputScrollPane, BorderLayout.CENTER);
+        inputPanel.add(sendButton, BorderLayout.EAST);
+        
+        // 将输入面板添加到主面板
+        add(inputPanel, BorderLayout.SOUTH);
     }
     
     private JPanel createInputPanel() {
@@ -276,27 +334,26 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         outerPanel.setBackground(INPUT_AREA_COLOR);
         outerPanel.setBorder(JBUI.Borders.empty(16, 20, 20, 20)); // 上下左右间距
         
-        // 内层输入区域容器
+        // 内层输入区域容器 - 通义灵码风格
         JPanel inputPanel = new JBPanel<>(new BorderLayout());
-        inputPanel.setBackground(JBColor.WHITE);
-        inputPanel.setBorder(BorderFactory.createCompoundBorder(
-            JBUI.Borders.customLine(new JBColor(Color.LIGHT_GRAY, new Color(70, 70, 70)), 1),
-            JBUI.Borders.empty(8, 12)
-        ));
-        inputPanel.setPreferredSize(new Dimension(0, 44));
+        inputPanel.setBackground(INPUT_BACKGROUND_COLOR);
+        inputPanel.setBorder(new RoundedBorder(12, INPUT_BORDER_COLOR, 1));
+        // 不要设置固定高度
+        // inputPanel.setPreferredSize(new Dimension(0, 48));
         
         // 输入框样式调整
-        inputField.setBorder(JBUI.Borders.empty());
+        inputField.setBorder(JBUI.Borders.empty(12, 16));
         inputField.setOpaque(false);
         
-        // 发送按钮样式调整
-        sendButton.setPreferredSize(new Dimension(60, 28));
-        sendButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
+        // 发送按钮样式调整 - 使用新的现代化按钮
+        if (sendButton == null) {
+            sendButton = createModernSendButton();
+        }
         
         // 输入框和按钮之间的间距
         JPanel inputContainer = new JBPanel<>(new BorderLayout());
         inputContainer.setOpaque(false);
-        inputContainer.setBorder(new EmptyBorder(0, 0, 0, 8));
+        inputContainer.setBorder(new EmptyBorder(0, 0, 0, 12));
         inputContainer.add(inputField, BorderLayout.CENTER);
         
         inputPanel.add(inputContainer, BorderLayout.CENTER);
@@ -359,10 +416,20 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         // 发送按钮状态：登录状态 && 不在等待生成状态
         boolean canSend = isLoggedIn && !isWaitingForGeneration;
         sendButton.setEnabled(canSend);
+        
+        // 更新发送按钮样式
         if (canSend) {
             sendButton.setText("发送");
+            sendButton.setBackground(SEND_BUTTON_COLOR);
+            sendButton.setBorder(new RoundedBorder(6, SEND_BUTTON_COLOR, 0));
         } else if (isWaitingForGeneration) {
             sendButton.setText("生成中...");
+            sendButton.setBackground(SEND_BUTTON_DISABLED_COLOR);
+            sendButton.setBorder(new RoundedBorder(6, SEND_BUTTON_DISABLED_COLOR, 0));
+        } else {
+            sendButton.setText("发送");
+            sendButton.setBackground(SEND_BUTTON_DISABLED_COLOR);
+            sendButton.setBorder(new RoundedBorder(6, SEND_BUTTON_DISABLED_COLOR, 0));
         }
         
         revalidate();
@@ -370,14 +437,22 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     }
     
     private void onLoginButtonClick(ActionEvent e) {
-        LoginDialog loginDialog = new LoginDialog(project);
-        if (loginDialog.showAndGet()) {
+        LOG.info("点击登录按钮");
+        LoginDialog dialog = new LoginDialog(project);
+        if (dialog.showAndGet()) {
+            LOG.info("登录对话框返回成功");
             updateUIState();
+            
+            // 登录成功后重新设置MQTT回调
+            setMqttCallback();
         }
     }
     
     private void onUserDropdownAction(ActionEvent e) {
         if (userDropdown.getSelectedItem() != null && "退出登录".equals(userDropdown.getSelectedItem().toString())) {
+            // 退出登录前先保存当前回调
+            Consumer<String> currentCallback = mqttService.getMessageCallback();
+            
             // 退出登录
             authService.logout(); // 这里会自动断开MQTT连接
             
@@ -390,6 +465,13 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             
             // 更新UI状态
             updateUIState();
+            
+            // 重新设置MQTT回调，确保回调不丢失
+            if (currentCallback != null) {
+                mqttService.setMessageCallback(currentCallback);
+            } else {
+                setMqttCallback();
+            }
         }
     }
     
@@ -400,9 +482,21 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         }
         addUserMessage(input);
         inputField.setText("");
+        
+        // 重置输入框高度
+        SwingUtilities.invokeLater(() -> {
+            int initialHeight = inputField.getFontMetrics(inputField.getFont()).getHeight() + 20;
+            Dimension currentSize = inputField.getParent().getPreferredSize();
+            inputField.getParent().setPreferredSize(new Dimension(currentSize.width, initialHeight));
+            inputField.getParent().revalidate();
+            inputField.getParent().repaint();
+        });
+        
         isWaitingForGeneration = true;
         sendButton.setEnabled(false);
         sendButton.setText("生成中...");
+        sendButton.setBackground(SEND_BUTTON_DISABLED_COLOR);
+        sendButton.setBorder(new RoundedBorder(6, SEND_BUTTON_DISABLED_COLOR, 0));
 
         // 自动切换到消息面板
         if (chatScrollPane.getViewport().getView() == welcomePanel) {
@@ -628,24 +722,64 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     
     private JButton createStyledButton(String text, Color bgColor) {
         JButton button = new JButton(text);
-        button.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 13));
-        button.setForeground(JBColor.WHITE);
         button.setBackground(bgColor);
-        button.setBorder(BorderFactory.createEmptyBorder(6, 12, 6, 12));
-        button.setFocusPainted(false);
+        button.setForeground(Color.WHITE);
+        button.setBorder(JBUI.Borders.empty(8, 16));
+        button.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
         button.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        button.setOpaque(true);
         
-        // 添加悬停效果
         button.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseEntered(MouseEvent e) {
-                button.setBackground(bgColor.darker());
+                button.setBackground(bgColor.brighter());
             }
             
             @Override
             public void mouseExited(MouseEvent e) {
                 button.setBackground(bgColor);
+            }
+        });
+        
+        return button;
+    }
+    
+    /**
+     * 创建通义灵码风格的发送按钮
+     */
+    private JButton createModernSendButton() {
+        JButton button = new JButton("发送");
+        button.setPreferredSize(new Dimension(60, 36));
+        button.setFont(new Font("PingFang SC", Font.PLAIN, 13));
+        if (!button.getFont().getFamily().equals("PingFang SC")) {
+            button.setFont(new Font("Microsoft YaHei", Font.PLAIN, 13));
+        }
+        if (!button.getFont().getFamily().equals("Microsoft YaHei")) {
+            button.setFont(UIUtil.getLabelFont().deriveFont(13f));
+        }
+        
+        // 设置按钮样式
+        button.setBackground(SEND_BUTTON_COLOR);
+        button.setForeground(Color.WHITE);
+        button.setBorder(new RoundedBorder(6, SEND_BUTTON_COLOR, 0));
+        button.setFocusPainted(false);
+        button.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        
+        // 添加鼠标悬停效果
+        button.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                if (button.isEnabled()) {
+                    button.setBackground(SEND_BUTTON_HOVER_COLOR);
+                    button.setBorder(new RoundedBorder(6, SEND_BUTTON_HOVER_COLOR, 0));
+                }
+            }
+            
+            @Override
+            public void mouseExited(MouseEvent e) {
+                if (button.isEnabled()) {
+                    button.setBackground(SEND_BUTTON_COLOR);
+                    button.setBorder(new RoundedBorder(6, SEND_BUTTON_COLOR, 0));
+                }
             }
         });
         
@@ -724,6 +858,20 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     
     private void onMQTTMessage(String message) {
         LOG.info("收到MQTT消息回调: " + message);
+        
+        // 如果是超时消息，重置状态
+        if ("操作超时，请重试".equals(message)) {
+            SwingUtilities.invokeLater(() -> {
+                isWaitingForGeneration = false;
+                sendButton.setEnabled(true);
+                sendButton.setText("发送");
+                sendButton.setBackground(SEND_BUTTON_COLOR);
+                sendButton.setBorder(new RoundedBorder(6, SEND_BUTTON_COLOR, 0));
+                addAssistantMessage(message);
+            });
+            return;
+        }
+        
         SwingUtilities.invokeLater(() -> {
             try {
                 LOG.info("在EDT线程中处理消息...");
@@ -734,37 +882,50 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                 }
                 
                 // 添加助手消息
-                LOG.info("添加助手消息到面板");
+                LOG.info("开始添加助手消息");
                 addAssistantMessage(message);
+                LOG.info("助手消息添加完成");
                 
-                // 检查是否是"所有代码均已生成"消息
-                if ("所有代码均已生成".equals(message.trim())) {
-                    LOG.info("收到生成完成消息，恢复发送按钮");
+                // 检查是否是"所有代码均已生成"消息或错误消息
+                if ("所有代码均已生成".equals(message.trim()) || 
+                    (message.contains("ERROR") || message.contains("错误") || message.contains("失败"))) {
+                    LOG.info("收到完成或错误消息，恢复发送按钮状态");
                     // 恢复发送按钮状态
                     isWaitingForGeneration = false;
                     sendButton.setEnabled(true);
                     sendButton.setText("发送");
+                    sendButton.setBackground(SEND_BUTTON_COLOR);
+                    sendButton.setBorder(new RoundedBorder(6, SEND_BUTTON_COLOR, 0));
                     
-                    // 检查是否有Java代码消息，如果有则显示批量生成按钮
-                    boolean hasJavaCode = chatMessages.stream()
-                        .filter(msg -> !msg.isUser())
-                        .anyMatch(msg -> {
-                            String content = msg.getContent();
-                            return content != null && 
-                                   (content.contains("class ") || 
-                                    content.contains("interface ") || 
-                                    content.contains("enum ")) &&
-                                   content.trim().startsWith("package ");
-                        });
-                    
-                    if (hasJavaCode) {
-                        addBatchGenerateButton();
+                    // 如果是成功完成的消息，检查是否需要显示批量生成按钮
+                    if ("所有代码均已生成".equals(message.trim())) {
+                        boolean hasJavaCode = chatMessages.stream()
+                            .filter(msg -> !msg.isUser())
+                            .anyMatch(msg -> {
+                                String content = msg.getContent();
+                                return content != null && 
+                                       (content.contains("class ") || 
+                                        content.contains("interface ") || 
+                                        content.contains("enum ")) &&
+                                       content.trim().startsWith("package ");
+                            });
+                        
+                        if (hasJavaCode) {
+                            addBatchGenerateButton();
+                        }
                     }
                 }
                 
-                LOG.info("消息添加完成");
+                LOG.info("消息处理完成");
             } catch (Exception e) {
                 LOG.error("处理MQTT消息时出错", e);
+                // 发生错误时重置状态
+                isWaitingForGeneration = false;
+                sendButton.setEnabled(true);
+                sendButton.setText("发送");
+                sendButton.setBackground(SEND_BUTTON_COLOR);
+                sendButton.setBorder(new RoundedBorder(6, SEND_BUTTON_COLOR, 0));
+                addAssistantMessage("消息处理出错，请重试");
             }
         });
     }
@@ -888,5 +1049,50 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         // 清空消息
         chatMessages.clear();
         chatPanel.removeAll();
+    }
+    
+    // 新增方法：设置MQTT回调
+    private void setMqttCallback() {
+        if (mqttService != null) {
+            LOG.info("开始设置MQTT回调函数");
+            mqttService.setMessageCallback(this::onMQTTMessage);
+            LOG.info("MQTT回调函数设置完成");
+        } else {
+            LOG.error("MQTT服务实例为空，无法设置回调");
+        }
+    }
+    
+    /**
+     * 圆角边框类，用于实现通义灵码风格的输入框
+     */
+    private static class RoundedBorder extends AbstractBorder {
+        private final int radius;
+        private final Color borderColor;
+        private final int borderWidth;
+        
+        public RoundedBorder(int radius, Color borderColor, int borderWidth) {
+            this.radius = radius;
+            this.borderColor = borderColor;
+            this.borderWidth = borderWidth;
+        }
+        
+        @Override
+        public void paintBorder(Component c, Graphics g, int x, int y, int width, int height) {
+            Graphics2D g2d = (Graphics2D) g.create();
+            g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2d.setColor(borderColor);
+            g2d.setStroke(new BasicStroke(borderWidth));
+            
+            // 绘制圆角矩形边框
+            g2d.drawRoundRect(x + borderWidth/2, y + borderWidth/2, 
+                             width - borderWidth, height - borderWidth, radius, radius);
+            
+            g2d.dispose();
+        }
+        
+        @Override
+        public Insets getBorderInsets(Component c) {
+            return new Insets(borderWidth + 2, borderWidth + 2, borderWidth + 2, borderWidth + 2);
+        }
     }
 } 

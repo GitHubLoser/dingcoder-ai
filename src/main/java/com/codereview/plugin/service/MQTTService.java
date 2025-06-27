@@ -9,6 +9,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 
 import java.util.function.Consumer;
+import java.util.List;
+import java.util.ArrayList;
 
 /**
  * MQTT服务类
@@ -32,6 +34,7 @@ public final class MQTTService {
     
     // 添加消息缓存队列
     private final java.util.Queue<String> pendingMessages = new java.util.LinkedList<>();
+    private final Object messageLock = new Object();
 
     /**
      * 获取MQTT服务实例
@@ -90,22 +93,24 @@ public final class MQTTService {
                         LOG.info("消息解析结果: " + (parsedContent != null ? parsedContent : "解析失败"));
 
                         if (parsedContent != null) {
-                            if (messageCallback != null) {
-                                // 在EDT线程中调用回调
-                                LOG.info("准备在EDT线程中执行回调...");
-                                com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
-                                    try {
-                                        LOG.info("正在执行回调函数...");
-                                        messageCallback.accept(parsedContent);
-                                        LOG.info("回调函数执行完成");
-                                    } catch (Exception e) {
-                                        LOG.error("执行回调函数时出错", e);
-                                    }
-                                });
-                            } else {
-                                // 回调函数未设置，将消息缓存起来
-                                LOG.info("回调函数未设置，将消息缓存: " + parsedContent);
-                                pendingMessages.offer(parsedContent);
+                            synchronized (messageLock) {
+                                if (messageCallback != null) {
+                                    // 在EDT线程中调用回调
+                                    LOG.info("准备在EDT线程中执行回调...");
+                                    com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
+                                        try {
+                                            LOG.info("正在执行回调函数...");
+                                            messageCallback.accept(parsedContent);
+                                            LOG.info("回调函数执行完成");
+                                        } catch (Exception e) {
+                                            LOG.error("执行回调函数时出错", e);
+                                        }
+                                    });
+                                } else {
+                                    // 回调函数未设置，将消息缓存起来
+                                    LOG.info("回调函数未设置，将消息缓存: " + parsedContent);
+                                    pendingMessages.offer(parsedContent);
+                                }
                             }
                         } else {
                             LOG.warn("无法处理消息: parsedContent=" + parsedContent + ", messageCallback=" + (messageCallback != null));
@@ -178,16 +183,18 @@ public final class MQTTService {
      */
     public void disconnect() {
         try {
-            if (mqttClient != null && mqttClient.isConnected()) {
-                mqttClient.disconnect();
-                LOG.info("MQTT连接已断开");
+            synchronized (messageLock) {
+                if (mqttClient != null && mqttClient.isConnected()) {
+                    mqttClient.disconnect();
+                    LOG.info("MQTT连接已断开");
+                }
+                isConnected = false;
+                currentTopic = null;
+                messageCallback = null;
+                // 清空缓存消息
+                pendingMessages.clear();
+                LOG.info("已清空缓存消息队列");
             }
-            isConnected = false;
-            currentTopic = null;
-            messageCallback = null;
-            // 清空缓存消息
-            pendingMessages.clear();
-            LOG.info("已清空缓存消息队列");
         } catch (Exception e) {
             LOG.error("断开MQTT连接时出错", e);
         }
@@ -204,19 +211,24 @@ public final class MQTTService {
      * 设置消息回调函数
      */
     public void setMessageCallback(Consumer<String> callback) {
-        this.messageCallback = callback;
-        
-        // 如果有缓存的消息，立即处理
-        if (callback != null && !pendingMessages.isEmpty()) {
-            LOG.info("回调函数已设置，处理 " + pendingMessages.size() + " 条缓存消息");
-            while (!pendingMessages.isEmpty()) {
-                String cachedMessage = pendingMessages.poll();
-                LOG.info("处理缓存消息: " + cachedMessage);
+        synchronized (messageLock) {
+            this.messageCallback = callback;
+            
+            // 如果有缓存的消息，立即处理
+            if (callback != null && !pendingMessages.isEmpty()) {
+                LOG.info("回调函数已设置，处理 " + pendingMessages.size() + " 条缓存消息");
+                List<String> messages = new ArrayList<>(pendingMessages);
+                pendingMessages.clear();
+                
+                // 在EDT线程中处理所有缓存消息
                 com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
-                    try {
-                        callback.accept(cachedMessage);
-                    } catch (Exception e) {
-                        LOG.error("处理缓存消息时出错", e);
+                    for (String cachedMessage : messages) {
+                        try {
+                            LOG.info("处理缓存消息: " + cachedMessage);
+                            callback.accept(cachedMessage);
+                        } catch (Exception e) {
+                            LOG.error("处理缓存消息时出错", e);
+                        }
                     }
                 });
             }

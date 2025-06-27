@@ -324,17 +324,60 @@ public final class AuthService {
     private void startMqttConnection(String username, String userSid) {
         // 在后台线程异步启动MQTT连接，避免阻塞登录过程
         new Thread(() -> {
-            try {
-                log.info("开始为用户 {} (userSid: {}) 启动MQTT连接", username, userSid);
-                MQTTService mqttService = MQTTService.getInstance();
-                
-                // 获取已经设置的callback
-                Consumer<String> existingCallback = mqttService.getMessageCallback();
-                mqttService.connectAndSubscribe(username, userSid, existingCallback);
-                
-                log.info("MQTT连接启动成功");
-            } catch (Exception e) {
-                log.error("启动MQTT连接失败: {}", e.getMessage(), e);
+            int retryCount = 0;
+            final int maxRetries = 3;
+            boolean connected = false;
+            
+            while (!connected && retryCount < maxRetries) {
+                try {
+                    log.info("开始为用户 {} (userSid: {}) 启动MQTT连接，尝试次数: {}", username, userSid, retryCount + 1);
+                    MQTTService mqttService = MQTTService.getInstance();
+                    
+                    // 保存当前的回调函数
+                    Consumer<String> existingCallback = mqttService.getMessageCallback();
+                    
+                    // 如果已经连接，先断开
+                    if (mqttService.isConnected()) {
+                        log.info("检测到已存在的MQTT连接，先断开");
+                        mqttService.disconnect();
+                    }
+                    
+                    // 重新连接时使用保存的回调函数
+                    mqttService.connectAndSubscribe(username, userSid, existingCallback);
+                    
+                    // 等待确认连接成功
+                    Thread.sleep(1000); // 等待1秒确认连接状态
+                    if (mqttService.isConnected()) {
+                        log.info("MQTT连接启动成功");
+                        connected = true;
+                    } else {
+                        log.warn("MQTT连接未成功建立，将重试");
+                        retryCount++;
+                    }
+                } catch (Exception e) {
+                    log.error("启动MQTT连接失败: {}", e.getMessage(), e);
+                    retryCount++;
+                    if (retryCount < maxRetries) {
+                        try {
+                            Thread.sleep(1000 * (1 << retryCount));
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            if (!connected) {
+                log.error("MQTT连接在{}次尝试后仍然失败", maxRetries);
+                // 通知UI线程显示错误消息
+                com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
+                    MQTTService mqttService = MQTTService.getInstance();
+                    Consumer<String> callback = mqttService.getMessageCallback();
+                    if (callback != null) {
+                        callback.accept("MQTT连接失败，请尝试重新登录");
+                    }
+                });
             }
         }).start();
     }
