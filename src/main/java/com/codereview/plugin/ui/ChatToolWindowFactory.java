@@ -19,12 +19,12 @@ import javax.swing.*;
  * 鼎码智辅工具窗口工厂类
  */
 public class ChatToolWindowFactory implements ToolWindowFactory {
-    private static ChatToolWindowPanel currentPanel = null;
+    private static MainToolWindowPanel currentPanel = null;
     
     @Override
     public void createToolWindowContent(@NotNull Project project, @NotNull ToolWindow toolWindow) {
         // 创建工具窗口内容
-        ChatToolWindowPanel panel = new ChatToolWindowPanel(project);
+        MainToolWindowPanel panel = new MainToolWindowPanel(project);
         currentPanel = panel;  // 保存面板引用
         
         // 使用旧版API方式创建Content
@@ -37,8 +37,8 @@ public class ChatToolWindowFactory implements ToolWindowFactory {
             @Override
             public void contentRemoved(@NotNull ContentManagerEvent event) {
                 Content content = event.getContent();
-                if (content.getComponent() instanceof ChatToolWindowPanel) {
-                    ChatToolWindowPanel panel = (ChatToolWindowPanel) content.getComponent();
+                if (content.getComponent() instanceof MainToolWindowPanel) {
+                    MainToolWindowPanel panel = (MainToolWindowPanel) content.getComponent();
                     panel.dispose();
                     if (panel == currentPanel) {
                         currentPanel = null;
@@ -121,5 +121,12 @@ public class ChatToolWindowFactory implements ToolWindowFactory {
         if (currentPanel != null) {
             SwingUtilities.invokeLater(() -> currentPanel.updateUIState());
         }
+    }
+    
+    /**
+     * 获取当前主面板（供外部调用）
+     */
+    public static MainToolWindowPanel getCurrentPanel() {
+        return currentPanel;
     }
 } 

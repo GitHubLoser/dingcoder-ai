@@ -58,9 +58,6 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     private final ValidateSpecService validateSpecService;
     
     // UI组件
-    private JPanel headerPanel;
-    private JComboBox<String> userDropdown;
-    private JButton loginButton;
     private JPanel chatPanel;
     private JScrollPane chatScrollPane;
     private JTextArea inputField;
@@ -109,9 +106,6 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     private void initializeUI() {
         setBackground(BACKGROUND_COLOR);
         
-        // 创建顶部头部面板
-        createHeaderPanel();
-        
         // 创建聊天区域
         createChatArea();
         
@@ -122,55 +116,11 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         createWelcomePanel();
         
         // 添加组件到主面板
-        add(headerPanel, BorderLayout.NORTH);
         add(chatScrollPane, BorderLayout.CENTER);
         add(createInputPanel(), BorderLayout.SOUTH);
     }
     
-    private void createHeaderPanel() {
-        headerPanel = new JBPanel<>(new BorderLayout());
-        headerPanel.setBackground(HEADER_COLOR);
-        headerPanel.setBorder(JBUI.Borders.empty(12, 16));
-        headerPanel.setPreferredSize(new Dimension(0, 60));
-        
-        // 左侧标题和状态
-        JPanel leftPanel = new JBPanel<>(new FlowLayout(FlowLayout.LEFT, 0, 0));
-        leftPanel.setOpaque(false);
-        
-        JBLabel titleLabel = new JBLabel("鼎码智辅");
-        titleLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 16));
-        leftPanel.add(titleLabel);
-        
-        // 状态指示器
-        JBLabel statusLabel = new JBLabel();
-        statusLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
-        statusLabel.setBorder(JBUI.Borders.emptyLeft(12));
-        leftPanel.add(statusLabel);
-        
-        // 保存状态标签引用
-        headerPanel.putClientProperty("statusLabel", statusLabel);
-        
-        headerPanel.add(leftPanel, BorderLayout.WEST);
-        
-        // 右侧用户区域
-        JPanel rightPanel = new JBPanel<>(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-        rightPanel.setOpaque(false);
-        
-        // 用户下拉框（登录后显示）
-        userDropdown = new JComboBox<>();
-        userDropdown.setPreferredSize(new Dimension(150, 32));
-        userDropdown.setVisible(false);
-        userDropdown.addActionListener(this::onUserDropdownAction);
-        rightPanel.add(userDropdown);
-        
-        // 登录按钮（未登录时显示）
-        loginButton = new JButton("登录");
-        loginButton.setPreferredSize(new Dimension(80, 32));
-        loginButton.addActionListener(this::onLoginButtonClick);
-        rightPanel.add(loginButton);
-        
-        headerPanel.add(rightPanel, BorderLayout.EAST);
-    }
+
     
     private void createChatArea() {
         // 创建聊天面板
@@ -194,20 +144,20 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         centerPanel.setOpaque(false);
         
         // 头像
-        JBLabel avatarLabel = new JBLabel("🤖");
-        avatarLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 48));
-        avatarLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-        centerPanel.add(avatarLabel);
+        // JBLabel avatarLabel = new JBLabel("🤖");
+        // avatarLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 48));
+        // avatarLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        // centerPanel.add(avatarLabel);
         
-        centerPanel.add(Box.createVerticalStrut(16));
+        // centerPanel.add(Box.createVerticalStrut(16));
         
         // 标题
-        JBLabel titleLabel = new JBLabel("鼎码智辅");
-        titleLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 24));
-        titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-        centerPanel.add(titleLabel);
+        // JBLabel titleLabel = new JBLabel("鼎码智辅");
+        // titleLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 24));
+        // titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        // centerPanel.add(titleLabel);
         
-        centerPanel.add(Box.createVerticalStrut(16));
+        // centerPanel.add(Box.createVerticalStrut(16));
         
         // 登录提示或欢迎信息
         JBLabel descLabel = new JBLabel();
@@ -221,7 +171,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         bigLoginButton.setPreferredSize(new Dimension(200, 40));
         bigLoginButton.setMaximumSize(new Dimension(200, 40));
         bigLoginButton.setAlignmentX(Component.CENTER_ALIGNMENT);
-        bigLoginButton.addActionListener(this::onLoginButtonClick);
+        bigLoginButton.setEnabled(false);
         
         centerPanel.add(Box.createVerticalStrut(24));
         centerPanel.add(bigLoginButton);
@@ -370,23 +320,6 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     public void updateUIState() {
         boolean isLoggedIn = authService.isLoggedIn();
         
-        // 更新头部状态
-        JBLabel statusLabel = (JBLabel) headerPanel.getClientProperty("statusLabel");
-        if (isLoggedIn) {
-            statusLabel.setText("已连接");
-            statusLabel.setForeground(new Color(40, 167, 69));
-            loginButton.setVisible(false);
-            userDropdown.setVisible(true);
-            userDropdown.removeAllItems();
-            userDropdown.addItem(authService.getCurrentUser());
-            userDropdown.addItem("退出登录");
-        } else {
-            statusLabel.setText("未连接");
-            statusLabel.setForeground(new Color(220, 53, 69));
-            loginButton.setVisible(true);
-            userDropdown.setVisible(false);
-        }
-        
         // 更新欢迎面板状态
         JBLabel descLabel = (JBLabel) welcomePanel.getClientProperty("descLabel");
         JButton bigLoginButton = (JButton) welcomePanel.getClientProperty("bigLoginButton");
@@ -405,7 +338,6 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                 chatScrollPane.setViewportView(welcomePanel);
             }
         } else {
-//            descLabel.setText("登录后可使用");
             bigLoginButton.setVisible(true);
             bigLoginButton.setText("登录后可使用");
             chatScrollPane.setViewportView(welcomePanel);
@@ -436,44 +368,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         repaint();
     }
     
-    private void onLoginButtonClick(ActionEvent e) {
-        LOG.info("点击登录按钮");
-        LoginDialog dialog = new LoginDialog(project);
-        if (dialog.showAndGet()) {
-            LOG.info("登录对话框返回成功");
-            updateUIState();
-            
-            // 登录成功后重新设置MQTT回调
-            setMqttCallback();
-        }
-    }
-    
-    private void onUserDropdownAction(ActionEvent e) {
-        if (userDropdown.getSelectedItem() != null && "退出登录".equals(userDropdown.getSelectedItem().toString())) {
-            // 退出登录前先保存当前回调
-            Consumer<String> currentCallback = mqttService.getMessageCallback();
-            
-            // 退出登录
-            authService.logout(); // 这里会自动断开MQTT连接
-            
-            // 清空消息
-            chatMessages.clear();
-            chatPanel.removeAll();
-            
-            // 重置等待状态
-            isWaitingForGeneration = false;
-            
-            // 更新UI状态
-            updateUIState();
-            
-            // 重新设置MQTT回调，确保回调不丢失
-            if (currentCallback != null) {
-                mqttService.setMessageCallback(currentCallback);
-            } else {
-                setMqttCallback();
-            }
-        }
-    }
+
     
     private void onSendMessage(ActionEvent e) {
         String input = inputField.getText().trim();

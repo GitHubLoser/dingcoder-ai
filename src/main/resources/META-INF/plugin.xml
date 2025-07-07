@@ -66,5 +66,15 @@
             <add-to-group group-id="ToolsMenu" anchor="last"/>
             <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt A"/>
         </action>
+        
+        <!-- 右键菜单分组 -->
+        <group id="com.codereview.plugin.ContextMenuGroup" text="鼎码智辅" popup="true">
+            <action id="com.codereview.plugin.action.CodeReviewAction"
+                    class="com.codereview.plugin.action.CodeReviewAction"
+                    text="代码评审"
+                    description="将选中代码添加到代码评审面板">
+            </action>
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+        </group>
     </actions>
 </idea-plugin> 
