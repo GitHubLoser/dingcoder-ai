@@ -173,19 +173,9 @@ public class MainToolWindowPanel extends JBPanel<MainToolWindowPanel> {
         String selectedItem = (String) source.getSelectedItem();
         
         if ("退出登录".equals(selectedItem)) {
-            // 确认退出对话框
-            int result = JOptionPane.showConfirmDialog(
-                this,
-                "确定要退出登录吗？",
-                "退出确认",
-                JOptionPane.YES_NO_OPTION,
-                JOptionPane.QUESTION_MESSAGE
-            );
-            
-            if (result == JOptionPane.YES_OPTION) {
-                authService.logout();
-                updateUIState();
-            }
+            // 直接退出登录，不需要确认
+            authService.logout();
+            updateUIState();
             
             // 重置下拉选择
             source.setSelectedIndex(-1);

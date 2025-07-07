@@ -651,6 +651,9 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         button.setFocusPainted(false);
         button.setCursor(new Cursor(Cursor.HAND_CURSOR));
         
+        // 添加点击事件处理
+        button.addActionListener(this::onSendMessage);
+        
         // 添加鼠标悬停效果
         button.addMouseListener(new MouseAdapter() {
             @Override

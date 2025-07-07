@@ -98,10 +98,14 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         JSplitPane topSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
         topSplitPane.setDividerLocation(200);
         topSplitPane.setResizeWeight(0.3);
+        topSplitPane.setDividerSize(0); // 去掉分割线
+        topSplitPane.setBorder(null); // 去掉边框
         
         JSplitPane bottomSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
         bottomSplitPane.setDividerLocation(200);
         bottomSplitPane.setResizeWeight(0.5);
+        bottomSplitPane.setDividerSize(0); // 去掉分割线
+        bottomSplitPane.setBorder(null); // 去掉边框
         
         // 上：评审文件区域
         JPanel filePanel = createFilePanel();
@@ -124,13 +128,16 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         JPanel panel = new JBPanel<>(new BorderLayout());
         panel.setBackground(PANEL_BACKGROUND);
         
-        // 创建带标题的边框
+        // 创建带标题的边框，并添加底部间距
         TitledBorder border = BorderFactory.createTitledBorder(
             BorderFactory.createLineBorder(BORDER_COLOR),
             "评审文件"
         );
         border.setTitleFont(new Font(Font.SANS_SERIF, Font.BOLD, 14));
-        panel.setBorder(border);
+        panel.setBorder(BorderFactory.createCompoundBorder(
+            JBUI.Borders.empty(0, 0, 5, 0), // 底部5px间距
+            border
+        ));
         
         // 文件列表区域
         fileListModel = new DefaultListModel<>();
@@ -217,13 +224,16 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         JPanel panel = new JBPanel<>(new BorderLayout());
         panel.setBackground(PANEL_BACKGROUND);
         
-        // 创建带标题的边框
+        // 创建带标题的边框，并添加上下间距
         TitledBorder border = BorderFactory.createTitledBorder(
             BorderFactory.createLineBorder(BORDER_COLOR),
             "评审变更"
         );
         border.setTitleFont(new Font(Font.SANS_SERIF, Font.BOLD, 14));
-        panel.setBorder(border);
+        panel.setBorder(BorderFactory.createCompoundBorder(
+            JBUI.Borders.empty(5, 0, 5, 0), // 上下各5px间距
+            border
+        ));
         
         // 变更内容区域
         changesArea = new JTextArea();
@@ -261,13 +271,16 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         JPanel panel = new JBPanel<>(new BorderLayout());
         panel.setBackground(PANEL_BACKGROUND);
         
-        // 创建带标题的边框
+        // 创建带标题的边框，并添加顶部间距
         TitledBorder border = BorderFactory.createTitledBorder(
             BorderFactory.createLineBorder(BORDER_COLOR),
             "评审结果"
         );
         border.setTitleFont(new Font(Font.SANS_SERIF, Font.BOLD, 14));
-        panel.setBorder(border);
+        panel.setBorder(BorderFactory.createCompoundBorder(
+            JBUI.Borders.empty(5, 0, 0, 0), // 顶部5px间距
+            border
+        ));
         
         // 结果显示区域
         resultArea = new JTextArea();
