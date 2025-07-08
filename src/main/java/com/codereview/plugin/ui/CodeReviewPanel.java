@@ -30,6 +30,7 @@ import com.intellij.openapi.fileTypes.FileType;
 import com.intellij.openapi.fileTypes.FileTypeManager;
 import com.intellij.ui.ColoredListCellRenderer;
 import com.intellij.ui.SimpleTextAttributes;
+import com.intellij.openapi.ui.Messages;
 
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
@@ -81,6 +82,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
     private JButton reviewFileButton;
     private JButton getGitDiffButton;
     private JButton reviewChangesButton;
+    private JButton resetButton;
     
     // 静态引用，供外部访问
     private static CodeReviewPanel instance;
@@ -230,6 +232,19 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         reviewFileButton = new JButton("开始评审");
         reviewFileButton.addActionListener(this::onReviewFiles);
         buttonPanel.add(reviewFileButton);
+        
+        resetButton = new JButton("重置");
+        resetButton.addActionListener(this::onReset);
+        // 复制开始评审按钮的样式
+        resetButton.setPreferredSize(reviewFileButton.getPreferredSize());
+        resetButton.setFont(reviewFileButton.getFont());
+        resetButton.setBackground(reviewFileButton.getBackground());
+        resetButton.setForeground(reviewFileButton.getForeground());
+        resetButton.setBorder(reviewFileButton.getBorder());
+        resetButton.setFocusPainted(reviewFileButton.isFocusPainted());
+        resetButton.setContentAreaFilled(reviewFileButton.isContentAreaFilled());
+        resetButton.setOpaque(reviewFileButton.isOpaque());
+        buttonPanel.add(resetButton);
         
         panel.add(buttonPanel, BorderLayout.SOUTH);
         
@@ -1556,6 +1571,37 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             }
             
             return this;
+        }
+    }
+
+    /**
+     * 重置操作 - 清除评审文件区域和评审结果区域的内容
+     */
+    private void onReset(ActionEvent e) {
+        // 确认对话框
+        int result = Messages.showDialog(
+            project,
+            "确定要重置吗？这将清除所有评审文件和结果。",
+            "确认重置",
+            new String[]{"是", "否"},
+            0,
+            Messages.getQuestionIcon()
+        );
+        
+        if (result == 0) { // 选择"是"
+            // 清除评审文件区域
+            fileListModel.clear();
+            fileListModel.addElement(new ReviewFileItem("提示", "点击 + 按钮或右键菜单添加要评审的文件", 0, 0, true));
+            
+            // 清除评审结果区域
+            resultTableModel.setRowCount(0);
+            resultTableModel.addRow(new Object[]{
+                "暂无评审结果",
+                "点击\"开始评审\"或\"评审变更\"开始代码审查...",
+                ""
+            });
+            
+            showMessage("✅ 已重置评审面板");
         }
     }
 } 
