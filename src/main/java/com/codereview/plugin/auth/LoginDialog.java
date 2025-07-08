@@ -123,12 +123,12 @@ public class LoginDialog extends DialogWrapper {
                             
                             // 显示成功消息
                             String successMessage = "登录成功！欢迎使用鼎码智辅";
-                            JOptionPane.showMessageDialog(
-                                null,
-                                successMessage,
-                                "登录成功",
-                                JOptionPane.INFORMATION_MESSAGE
-                            );
+                            // JOptionPane.showMessageDialog(
+                            //     null,
+                            //     successMessage,
+                            //     "登录成功",
+                            //     JOptionPane.INFORMATION_MESSAGE
+                            // );
                         });
                     } else {
                         // 登录失败 - 恢复UI状态

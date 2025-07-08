@@ -83,6 +83,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
     private JButton getGitDiffButton;
     private JButton reviewChangesButton;
     private JButton resetButton;
+    private boolean mqttReceived = false; // 新增，是否收到MQTT消息
     
     // 静态引用，供外部访问
     private static CodeReviewPanel instance;
@@ -372,13 +373,6 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         // 设置反馈按钮渲染器和编辑器
         feedbackColumn.setCellRenderer(new FeedbackButtonRenderer());
         feedbackColumn.setCellEditor(new FeedbackButtonEditor());
-        
-        // 添加初始提示行
-        resultTableModel.addRow(new Object[]{
-            "暂无评审结果",
-            "点击\"开始评审\"或\"评审变更\"开始代码审查...",
-            ""
-        });
         
         JBScrollPane scrollPane = new JBScrollPane(resultTable);
         scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
@@ -867,12 +861,11 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
      */
     private void onCodeReviewMqttMessage(String message) {
         LOG.info("收到代码审查MQTT消息: " + message);
-        
+        mqttReceived = true; // 收到MQTT消息，允许反馈按钮可用
         SwingUtilities.invokeLater(() -> {
             try {
                 // 将消息追加到评审结果区域
                 parseAndAppendResult(message);
-                
                 LOG.info("代码审查消息已追加显示在结果区域");
             } catch (Exception e) {
                 LOG.error("处理代码审查MQTT消息时出错", e);
@@ -1443,12 +1436,14 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             confirmButton.setFocusable(false);
             confirmButton.setMargin(new Insets(0,0,0,0));
             confirmButton.setBorderPainted(false);
+            confirmButton.setEnabled(mqttReceived); // 根据mqttReceived控制可用
             JButton falsePositiveButton = new JButton("❎");
             falsePositiveButton.setPreferredSize(new Dimension(30, 30));
             falsePositiveButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 16));
             falsePositiveButton.setFocusable(false);
             falsePositiveButton.setMargin(new Insets(0,0,0,0));
             falsePositiveButton.setBorderPainted(false);
+            falsePositiveButton.setEnabled(mqttReceived); // 根据mqttReceived控制可用
             panel.add(confirmButton);
             panel.add(falsePositiveButton);
             return panel;
@@ -1472,12 +1467,14 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             confirmButton.setFocusable(false);
             confirmButton.setMargin(new Insets(0,0,0,0));
             confirmButton.setBorderPainted(false);
+            confirmButton.setEnabled(mqttReceived); // 根据mqttReceived控制可用
             falsePositiveButton = new JButton("❎");
             falsePositiveButton.setPreferredSize(new Dimension(30, 30));
             falsePositiveButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 16));
             falsePositiveButton.setFocusable(false);
             falsePositiveButton.setMargin(new Insets(0,0,0,0));
             falsePositiveButton.setBorderPainted(false);
+            falsePositiveButton.setEnabled(mqttReceived); // 根据mqttReceived控制可用
             confirmButton.addActionListener(e -> {
                 onFeedbackClick("confirmed", editingRow);
                 fireEditingStopped();
@@ -1592,15 +1589,15 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             // 清除评审文件区域
             fileListModel.clear();
             fileListModel.addElement(new ReviewFileItem("提示", "点击 + 按钮或右键菜单添加要评审的文件", 0, 0, true));
-            
             // 清除评审结果区域
+            if (resultTable.isEditing()) {
+                resultTable.getCellEditor().stopCellEditing();
+            }
             resultTableModel.setRowCount(0);
-            resultTableModel.addRow(new Object[]{
-                "暂无评审结果",
-                "点击\"开始评审\"或\"评审变更\"开始代码审查...",
-                ""
-            });
-            
+            resultTable.clearSelection();
+            resultTable.revalidate();
+            resultTable.repaint();
+            mqttReceived = false; // 重置时禁用反馈按钮
             showMessage("✅ 已重置评审面板");
         }
     }
