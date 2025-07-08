@@ -60,9 +60,9 @@ public class CodeReviewAction extends AnAction {
                 // 添加选中代码到评审面板
                 CodeReviewPanel reviewPanel = CodeReviewPanel.getInstance();
                 if (reviewPanel != null) {
-                    String description = "右键添加的代码片段: " + 
-                                       selectedText.substring(0, Math.min(50, selectedText.length())) + "...";
-                    reviewPanel.addFileToReview(file.getName(), description, startLine, endLine);
+                    // 获取文件相对路径
+                    String filePath = getRelativeFilePath(project, file);
+                    reviewPanel.addFileToReview(file.getName(), filePath, startLine, endLine);
                 }
             });
         }
@@ -84,5 +84,19 @@ public class CodeReviewAction extends AnAction {
         
         e.getPresentation().setEnabled(project != null && editor != null && hasSelection);
         e.getPresentation().setVisible(project != null && editor != null && hasSelection);
+    }
+    
+    /**
+     * 获取文件相对路径
+     */
+    private String getRelativeFilePath(Project project, VirtualFile file) {
+        String basePath = project.getBasePath();
+        String fullPath = file.getPath();
+        
+        if (basePath != null && fullPath.startsWith(basePath)) {
+            return fullPath.substring(basePath.length() + 1);
+        }
+        
+        return fullPath;
     }
 } 

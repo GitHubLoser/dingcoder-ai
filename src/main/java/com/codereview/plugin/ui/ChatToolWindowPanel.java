@@ -943,9 +943,9 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     // 新增方法：设置MQTT回调
     private void setMqttCallback() {
         if (mqttService != null) {
-            LOG.info("开始设置MQTT回调函数");
-            mqttService.setMessageCallback(this::onMQTTMessage);
-            LOG.info("MQTT回调函数设置完成");
+            LOG.info("开始设置代码生成MQTT回调函数");
+            mqttService.setMessageCallback(MQTTService.FUNCTION_CODE_GENERATION, this::onMQTTMessage);
+            LOG.info("代码生成MQTT回调函数设置完成");
         } else {
             LOG.error("MQTT服务实例为空，无法设置回调");
         }

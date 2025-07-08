@@ -11,6 +11,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.function.Consumer;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * MQTT服务类
@@ -25,12 +28,18 @@ public final class MQTTService {
     private static final String USERNAME = "admin";
     private static final String PASSWORD = "Digiwin@2024y";
     private static final String TOPIC_PREFIX = "/msg/tip/";
+    
+    // 功能类型定义
+    public static final String FUNCTION_CODE_GENERATION = "code_generation";
+    public static final String FUNCTION_CODE_REVIEW = "code_review";
 
     private MqttClient mqttClient;
     private boolean isConnected = false;
-    private Consumer<String> messageCallback;
-    private String currentTopic;
+    private String currentUserSid;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    
+    // 多topic回调映射
+    private final Map<String, Consumer<String>> topicCallbacks = new ConcurrentHashMap<>();
     
     // 添加消息缓存队列
     private final java.util.Queue<String> pendingMessages = new java.util.LinkedList<>();
@@ -44,21 +53,18 @@ public final class MQTTService {
     }
 
     /**
-     * 连接到MQTT服务器并订阅主题
+     * 连接到MQTT服务器并订阅多个主题
      * @param userId 用户ID
      * @param userSid 用户SID，用于构建动态主题
-     * @param callback 消息回调函数，可以为null，后续可通过setMessageCallback设置
      */
-    public void connectAndSubscribe(String userId, String userSid, Consumer<String> callback) {
-        this.messageCallback = callback; // 可以为null
+    public void connectAndSubscribe(String userId, String userSid) {
+        this.currentUserSid = userSid;
 
         try {
             String clientId = "ai-code-assistant-" + userId + "-" + System.currentTimeMillis();
-            // 使用userSid动态构建主题
-            currentTopic = TOPIC_PREFIX + userSid;
 
             LOG.info("开始连接MQTT Broker: " + BROKER);
-            LOG.info("使用动态主题: " + currentTopic + " (userSid: " + userSid + ")");
+            LOG.info("用户SID: " + userSid);
 
             // 创建MQTT客户端实例
             mqttClient = new MqttClient(BROKER, clientId, new MemoryPersistence());
@@ -86,34 +92,44 @@ public final class MQTTService {
                     try {
                         String content = new String(message.getPayload(), StandardCharsets.UTF_8);
                         LOG.info("收到MQTT消息 - Topic: " + topic + ", Message: " + content);
-                        LOG.info("当前回调函数状态: " + (messageCallback != null ? "已设置" : "未设置"));
+
+                        // 根据topic确定功能类型
+                        String functionType;
+                        if (topic.endsWith("/" + FUNCTION_CODE_REVIEW)) {
+                            functionType = FUNCTION_CODE_REVIEW;
+                        } else {
+                            // 原有的代码生成topic格式，默认为代码生成
+                            functionType = FUNCTION_CODE_GENERATION;
+                        }
 
                         // 解析JSON消息，提取text内容
                         String parsedContent = parseMessageContent(content);
-                        LOG.info("消息解析结果: " + (parsedContent != null ? parsedContent : "解析失败"));
-
                         if (parsedContent != null) {
+                            LOG.info("消息解析结果 - 功能类型: " + functionType + ", 内容: " + parsedContent);
+                            
                             synchronized (messageLock) {
-                                if (messageCallback != null) {
+                                // 根据功能类型找到对应的回调函数
+                                Consumer<String> callback = topicCallbacks.get(functionType);
+                                if (callback != null) {
                                     // 在EDT线程中调用回调
-                                    LOG.info("准备在EDT线程中执行回调...");
+                                    LOG.info("准备在EDT线程中执行回调，功能类型: " + functionType);
                                     com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
                                         try {
-                                            LOG.info("正在执行回调函数...");
-                                            messageCallback.accept(parsedContent);
+                                            LOG.info("正在执行回调函数，功能类型: " + functionType);
+                                            callback.accept(parsedContent);
                                             LOG.info("回调函数执行完成");
                                         } catch (Exception e) {
                                             LOG.error("执行回调函数时出错", e);
                                         }
                                     });
                                 } else {
-                                    // 回调函数未设置，将消息缓存起来
-                                    LOG.info("回调函数未设置，将消息缓存: " + parsedContent);
+                                    LOG.warn("未找到功能类型 " + functionType + " 的回调函数");
+                                    // 如果没有找到对应的回调，缓存消息
                                     pendingMessages.offer(parsedContent);
                                 }
                             }
                         } else {
-                            LOG.warn("无法处理消息: parsedContent=" + parsedContent + ", messageCallback=" + (messageCallback != null));
+                            LOG.warn("无法解析消息内容");
                         }
 
                     } catch (Exception e) {
@@ -131,17 +147,21 @@ public final class MQTTService {
             mqttClient.connect(options);
             LOG.info("已连接到 MQTT Broker: " + BROKER);
 
-            // 订阅主题
-            mqttClient.subscribe(currentTopic, 2); // QoS 2
-            LOG.info("已订阅 Topic: " + currentTopic);
+            // 订阅代码生成主题（保持原有格式）
+            String codeGenTopic = TOPIC_PREFIX + userSid;
+            mqttClient.subscribe(codeGenTopic, 2); // QoS 2
+            LOG.info("已订阅代码生成 Topic: " + codeGenTopic);
+            
+            // 订阅代码审查主题（新格式）
+            String codeReviewTopic = TOPIC_PREFIX + userSid + "/" + FUNCTION_CODE_REVIEW;
+            mqttClient.subscribe(codeReviewTopic, 2); // QoS 2
+            LOG.info("已订阅代码审查 Topic: " + codeReviewTopic);
 
             isConnected = true;
 
         } catch (Exception e) {
             LOG.error("MQTT连接失败", e);
             isConnected = false;
-            // 不抛出异常，避免影响登录流程
-            // throw new RuntimeException("MQTT连接失败: " + e.getMessage(), e);
         }
     }
 
@@ -179,40 +199,13 @@ public final class MQTTService {
     }
 
     /**
-     * 断开MQTT连接
+     * 设置特定功能类型的消息回调函数
+     * @param functionType 功能类型 (FUNCTION_CODE_GENERATION 或 FUNCTION_CODE_REVIEW)
+     * @param callback 回调函数
      */
-    public void disconnect() {
-        try {
-            synchronized (messageLock) {
-                if (mqttClient != null && mqttClient.isConnected()) {
-                    mqttClient.disconnect();
-                    LOG.info("MQTT连接已断开");
-                }
-                isConnected = false;
-                currentTopic = null;
-                messageCallback = null;
-                // 清空缓存消息
-                pendingMessages.clear();
-                LOG.info("已清空缓存消息队列");
-            }
-        } catch (Exception e) {
-            LOG.error("断开MQTT连接时出错", e);
-        }
-    }
-
-    /**
-     * 检查是否已连接
-     */
-    public boolean isConnected() {
-        return isConnected && mqttClient != null && mqttClient.isConnected();
-    }
-
-    /**
-     * 设置消息回调函数
-     */
-    public void setMessageCallback(Consumer<String> callback) {
+    public void setMessageCallback(String functionType, Consumer<String> callback) {
         synchronized (messageLock) {
-            this.messageCallback = callback;
+            topicCallbacks.put(functionType, callback);
             
             // 如果有缓存的消息，立即处理
             if (callback != null && !pendingMessages.isEmpty()) {
@@ -236,16 +229,71 @@ public final class MQTTService {
     }
 
     /**
-     * 获取当前订阅的主题
+     * 设置代码生成消息回调函数（向后兼容）
      */
-    public String getCurrentTopic() {
-        return currentTopic;
+    public void setMessageCallback(Consumer<String> callback) {
+        setMessageCallback(FUNCTION_CODE_GENERATION, callback);
     }
 
     /**
-     * 获取当前消息回调函数
+     * 断开MQTT连接
+     */
+    public void disconnect() {
+        try {
+            synchronized (messageLock) {
+                if (mqttClient != null && mqttClient.isConnected()) {
+                    mqttClient.disconnect();
+                    LOG.info("MQTT连接已断开");
+                }
+                isConnected = false;
+                currentUserSid = null;
+                topicCallbacks.clear();
+                // 清空缓存消息
+                pendingMessages.clear();
+                LOG.info("已清空缓存消息队列");
+            }
+        } catch (Exception e) {
+            LOG.error("断开MQTT连接时出错", e);
+        }
+    }
+
+    /**
+     * 检查是否已连接
+     */
+    public boolean isConnected() {
+        return isConnected && mqttClient != null && mqttClient.isConnected();
+    }
+
+    /**
+     * 获取当前订阅的主题列表
+     */
+    public List<String> getSubscribedTopics() {
+        List<String> topics = new ArrayList<>();
+        if (currentUserSid != null) {
+            topics.add(TOPIC_PREFIX + currentUserSid); // 代码生成原有格式
+            topics.add(TOPIC_PREFIX + currentUserSid + "/" + FUNCTION_CODE_REVIEW); // 代码审查新格式
+        }
+        return topics;
+    }
+
+    /**
+     * 获取当前用户SID
+     */
+    public String getCurrentUserSid() {
+        return currentUserSid;
+    }
+
+    /**
+     * 获取指定功能类型的回调函数
+     */
+    public Consumer<String> getMessageCallback(String functionType) {
+        return topicCallbacks.get(functionType);
+    }
+
+    /**
+     * 获取代码生成回调函数（向后兼容）
      */
     public Consumer<String> getMessageCallback() {
-        return messageCallback;
+        return getMessageCallback(FUNCTION_CODE_GENERATION);
     }
 }

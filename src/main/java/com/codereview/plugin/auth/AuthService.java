@@ -334,7 +334,8 @@ public final class AuthService {
                     MQTTService mqttService = MQTTService.getInstance();
                     
                     // 保存当前的回调函数
-                    Consumer<String> existingCallback = mqttService.getMessageCallback();
+                    Consumer<String> existingCodeGenCallback = mqttService.getMessageCallback(MQTTService.FUNCTION_CODE_GENERATION);
+                    Consumer<String> existingCodeReviewCallback = mqttService.getMessageCallback(MQTTService.FUNCTION_CODE_REVIEW);
                     
                     // 如果已经连接，先断开
                     if (mqttService.isConnected()) {
@@ -342,8 +343,16 @@ public final class AuthService {
                         mqttService.disconnect();
                     }
                     
-                    // 重新连接时使用保存的回调函数
-                    mqttService.connectAndSubscribe(username, userSid, existingCallback);
+                    // 重新连接并订阅多个topic
+                    mqttService.connectAndSubscribe(username, userSid);
+                    
+                    // 恢复回调函数
+                    if (existingCodeGenCallback != null) {
+                        mqttService.setMessageCallback(MQTTService.FUNCTION_CODE_GENERATION, existingCodeGenCallback);
+                    }
+                    if (existingCodeReviewCallback != null) {
+                        mqttService.setMessageCallback(MQTTService.FUNCTION_CODE_REVIEW, existingCodeReviewCallback);
+                    }
                     
                     // 等待确认连接成功
                     Thread.sleep(1000); // 等待1秒确认连接状态

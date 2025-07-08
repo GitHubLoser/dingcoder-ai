@@ -49,6 +49,10 @@ import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import java.util.List;
+import java.util.ArrayList;
+import com.intellij.openapi.vfs.LocalFileSystem;
+import com.codereview.plugin.service.MQTTService;
 
 /**
  * 代码审查面板，包含评审文件、评审变更、评审结果三个区域
@@ -84,6 +88,9 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         instance = this; // 设置静态引用
         
         initializeUI();
+        
+        // 设置代码审查MQTT回调
+        setCodeReviewMqttCallback();
     }
     
     public static CodeReviewPanel getInstance() {
@@ -334,8 +341,9 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             fileListModel.removeElementAt(0); // 移除提示项
         }
         
-        String description = "完整文件: " + currentFile.getPath();
-        ReviewFileItem item = new ReviewFileItem(currentFile.getName(), description, 0, 0, false);
+        String relativePath = getRelativeFilePath(currentFile);
+        String description = "完整文件: " + relativePath;
+        ReviewFileItem item = new ReviewFileItem(currentFile.getName(), relativePath, 0, 0, false);
         fileListModel.addElement(item);
         
         resultArea.setText("✅ 已添加文件: " + currentFile.getName());
@@ -367,8 +375,9 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             fileListModel.removeElementAt(0); // 移除提示项
         }
         
+        String relativePath = getRelativeFilePath(currentFile);
         String description = "选中代码片段: " + selectedCode.substring(0, Math.min(50, selectedCode.length())) + "...";
-        ReviewFileItem item = new ReviewFileItem(currentFile.getName(), description, startLine, endLine, false);
+        ReviewFileItem item = new ReviewFileItem(currentFile.getName(), relativePath, startLine, endLine, false);
         fileListModel.addElement(item);
         
                 resultArea.setText("✅ 已添加选中代码: " + currentFile.getName() + " (行 " + startLine + "-" + endLine + ")");
@@ -385,8 +394,9 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                 }
                 
                 for (VirtualFile file : selectedFiles) {
-                    String description = "项目文件: " + file.getPath();
-                    ReviewFileItem item = new ReviewFileItem(file.getName(), description, 0, 0, false);
+                    String relativePath = getRelativeFilePath(file);
+                    String description = "项目文件: " + relativePath;
+                    ReviewFileItem item = new ReviewFileItem(file.getName(), relativePath, 0, 0, false);
                     fileListModel.addElement(item);
                 }
                 
@@ -448,15 +458,180 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             return;
         }
         
-        resultArea.setText("🔄 正在进行代码评审，请稍候...\n\n分析中...");
+        resultArea.setText("🔄 正在进行代码评审，请稍候...\n\n准备文件...");
         
-        // 调用评审服务
-        reviewService.reviewCurrentFile(result -> {
-            SwingUtilities.invokeLater(() -> {
-                resultArea.setText(result);
-                resultArea.setCaretPosition(0);
+        // 构建ReviewService.ReviewFileItem列表
+        List<ReviewService.ReviewFileItem> reviewItems = new ArrayList<>();
+        
+        try {
+            for (int i = 0; i < fileListModel.size(); i++) {
+                ReviewFileItem uiItem = fileListModel.get(i);
+                if (uiItem.isPlaceholder()) {
+                    continue;
+                }
+                
+                // 获取文件内容
+                String content = getFileContentForReview(uiItem);
+                if (content == null) {
+                    LOG.warn("无法获取文件内容: " + uiItem.getFileName());
+                    continue;
+                }
+                
+                // 创建ReviewService的ReviewFileItem
+                if (uiItem.getStartLine() > 0 && uiItem.getEndLine() > 0) {
+                    // 代码片段
+                    reviewItems.add(new ReviewService.ReviewFileItem(
+                        uiItem.getFileName(),
+                        uiItem.getDescription(), // 这里作为filePath使用
+                        content,
+                        uiItem.getStartLine(),
+                        uiItem.getEndLine()
+                    ));
+                } else {
+                    // 完整文件
+                    reviewItems.add(new ReviewService.ReviewFileItem(
+                        uiItem.getFileName(),
+                        uiItem.getDescription(), // 这里作为filePath使用
+                        content
+                    ));
+                }
+            }
+            
+            if (reviewItems.isEmpty()) {
+                resultArea.setText("❌ 没有有效的文件可以评审\n\n请检查文件是否可以访问。");
+                return;
+            }
+            
+            LOG.info("准备评审 " + reviewItems.size() + " 个文件/代码片段");
+            resultArea.setText("🔄 正在调用评审API，请稍候...\n\n已准备 " + reviewItems.size() + " 个文件");
+            
+            // 调用新的评审服务
+            reviewService.reviewFiles(reviewItems, result -> {
+                SwingUtilities.invokeLater(() -> {
+                    resultArea.setText(result);
+                    resultArea.setCaretPosition(0);
+                });
             });
-        });
+            
+        } catch (Exception ex) {
+            LOG.error("准备评审文件时出错", ex);
+            resultArea.setText("❌ 准备评审文件时出错：" + ex.getMessage() + "\n\n请检查文件权限和网络连接。");
+        }
+    }
+    
+    /**
+     * 获取文件相对路径
+     */
+    private String getRelativeFilePath(VirtualFile file) {
+        String basePath = project.getBasePath();
+        String fullPath = file.getPath();
+        
+        if (basePath != null && fullPath.startsWith(basePath)) {
+            return fullPath.substring(basePath.length() + 1);
+        }
+        
+        return fullPath;
+    }
+    
+    /**
+     * 获取用于评审的文件内容
+     */
+    private String getFileContentForReview(ReviewFileItem uiItem) {
+        try {
+            // 先尝试通过文件路径查找文件
+            VirtualFile file = findFileByPath(uiItem.getDescription()); // description现在存储的是filePath
+            
+            // 如果路径查找失败，则通过文件名查找
+            if (file == null) {
+                file = findFileByName(uiItem.getFileName());
+            }
+            
+            if (file == null) {
+                LOG.warn("找不到文件: " + uiItem.getFileName() + ", 路径: " + uiItem.getDescription());
+                return null;
+            }
+            
+            String fullContent = new String(file.contentsToByteArray(), file.getCharset());
+            
+            // 如果是代码片段，提取对应行的内容
+            if (uiItem.getStartLine() > 0 && uiItem.getEndLine() > 0) {
+                String[] lines = fullContent.split("\n");
+                StringBuilder selectedContent = new StringBuilder();
+                
+                int start = Math.max(0, uiItem.getStartLine() - 1); // 转换为0基索引
+                int end = Math.min(lines.length, uiItem.getEndLine());
+                
+                for (int i = start; i < end; i++) {
+                    selectedContent.append(lines[i]).append("\n");
+                }
+                
+                return selectedContent.toString();
+            } else {
+                return fullContent;
+            }
+            
+        } catch (Exception e) {
+            LOG.error("读取文件内容失败: " + uiItem.getFileName(), e);
+            return null;
+        }
+    }
+    
+    /**
+     * 通过相对路径查找文件
+     */
+    private VirtualFile findFileByPath(String relativePath) {
+        String basePath = project.getBasePath();
+        if (basePath == null || relativePath == null) {
+            return null;
+        }
+        
+        String fullPath = basePath + "/" + relativePath;
+        return LocalFileSystem.getInstance().findFileByPath(fullPath);
+    }
+    
+    /**
+     * 在项目中查找文件
+     */
+    private VirtualFile findFileByName(String fileName) {
+        String basePath = project.getBasePath();
+        if (basePath == null) {
+            return null;
+        }
+        
+        // 首先尝试在当前打开的文件中查找
+        VirtualFile[] openFiles = FileEditorManager.getInstance(project).getOpenFiles();
+        for (VirtualFile file : openFiles) {
+            if (fileName.equals(file.getName())) {
+                return file;
+            }
+        }
+        
+        // 如果没找到，在整个项目中搜索
+        VirtualFile projectRoot = LocalFileSystem.getInstance().findFileByPath(basePath);
+        if (projectRoot != null) {
+            return findFileRecursively(projectRoot, fileName);
+        }
+        
+        return null;
+    }
+    
+    /**
+     * 递归查找文件
+     */
+    private VirtualFile findFileRecursively(VirtualFile directory, String fileName) {
+        if (directory.isDirectory()) {
+            for (VirtualFile child : directory.getChildren()) {
+                if (child.isDirectory()) {
+                    VirtualFile found = findFileRecursively(child, fileName);
+                    if (found != null) {
+                        return found;
+                    }
+                } else if (fileName.equals(child.getName())) {
+                    return child;
+                }
+            }
+        }
+        return null;
     }
     
     private void onGetGitDiff(ActionEvent e) {
@@ -495,15 +670,63 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             return;
         }
         
-        resultArea.setText("🔄 正在评审代码变更，请稍候...\n\n分析变更内容中...");
+        resultArea.setText("🔄 正在评审代码变更，请稍候...\n\n准备变更内容...");
         
-        // 调用评审服务评审变更内容
-        // 这里可以创建一个专门的变更评审方法
-        SwingUtilities.invokeLater(() -> {
-            String mockResult = getMockChangeReviewResult(changes);
-            resultArea.setText(mockResult);
-            resultArea.setCaretPosition(0);
-        });
+        try {
+            // 将Git变更作为特殊文件进行评审
+            List<ReviewService.ReviewFileItem> reviewItems = new ArrayList<>();
+            
+            // 创建一个虚拟的"Git变更"文件项
+            String projectName = project.getName();
+            String changeFileName = projectName + "_git_changes.diff";
+            String changeFilePath = "git_diff/" + changeFileName;
+            
+            reviewItems.add(new ReviewService.ReviewFileItem(
+                changeFileName,
+                changeFilePath,
+                changes
+            ));
+            
+            LOG.info("准备评审Git变更，内容长度: " + changes.length() + " 字符");
+            resultArea.setText("🔄 正在调用变更评审API，请稍候...\n\n分析变更内容中...");
+            
+            // 调用评审服务
+            reviewService.reviewFiles(reviewItems, result -> {
+                SwingUtilities.invokeLater(() -> {
+                    // 为变更评审结果添加特殊标记
+                    String enhancedResult = "# 🔄 Git变更代码审查\n\n" + 
+                                          "**审查类型：** 代码变更差异分析\n" +
+                                          "**变更范围：** " + countChangedFiles(changes) + " 个文件\n\n" + 
+                                          result;
+                    resultArea.setText(enhancedResult);
+                    resultArea.setCaretPosition(0);
+                });
+            });
+            
+        } catch (Exception ex) {
+            LOG.error("评审变更时出错", ex);
+            resultArea.setText("❌ 评审变更时出错：" + ex.getMessage() + "\n\n请检查网络连接和API服务状态。");
+        }
+    }
+    
+    /**
+     * 统计变更的文件数量
+     */
+    private int countChangedFiles(String gitDiff) {
+        if (gitDiff == null || gitDiff.trim().isEmpty()) {
+            return 0;
+        }
+        
+        String[] lines = gitDiff.split("\n");
+        int fileCount = 0;
+        
+        for (String line : lines) {
+            if (line.startsWith("diff --git")) {
+                fileCount++;
+            }
+        }
+        
+        return Math.max(1, fileCount); // 至少为1，即使没有标准的diff格式
     }
     
     private String getSelectedCodeFromEditor() {
@@ -572,35 +795,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         return output.toString();
     }
     
-    private String getMockChangeReviewResult(String changes) {
-        int lineCount = changes.split("\n").length;
-        
-        StringBuilder result = new StringBuilder();
-        result.append("# Git变更代码审查结果\n\n");
-        result.append("## 变更概览\n");
-        result.append("- 变更行数: ").append(lineCount).append("\n");
-        result.append("- 审查评分: 88/100\n");
-        result.append("- 风险等级: 中等\n\n");
-        
-        result.append("## 变更分析\n");
-        result.append("1. **代码质量**: 变更代码整体质量良好\n");
-        result.append("2. **安全性**: 未发现明显安全隐患\n");
-        result.append("3. **性能影响**: 对性能影响较小\n");
-        result.append("4. **兼容性**: 变更与现有代码兼容性良好\n\n");
-        
-        result.append("## 建议\n");
-        result.append("1. 建议增加单元测试覆盖新增的代码逻辑\n");
-        result.append("2. 考虑添加必要的代码注释\n");
-        result.append("3. 在提交前进行代码格式化\n");
-        result.append("4. 确保所有依赖项正确更新\n\n");
-        
-        result.append("## 风险评估\n");
-        result.append("- **低风险**: 代码格式和注释修改\n");
-        result.append("- **中风险**: 业务逻辑变更\n");
-        result.append("- **高风险**: 暂未发现\n");
-        
-        return result.toString();
-    }
+
     
     public void dispose() {
         // 清理资源
@@ -609,14 +804,51 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
     }
     
     /**
+     * 设置代码审查MQTT回调
+     */
+    private void setCodeReviewMqttCallback() {
+        try {
+            MQTTService mqttService = MQTTService.getInstance();
+            if (mqttService != null) {
+                LOG.info("开始设置代码审查MQTT回调函数");
+                mqttService.setMessageCallback(MQTTService.FUNCTION_CODE_REVIEW, this::onCodeReviewMqttMessage);
+                LOG.info("代码审查MQTT回调函数设置完成");
+            } else {
+                LOG.error("MQTT服务实例为空，无法设置代码审查回调");
+            }
+        } catch (Exception e) {
+            LOG.error("设置代码审查MQTT回调时出错", e);
+        }
+    }
+    
+    /**
+     * 处理代码审查MQTT消息
+     */
+    private void onCodeReviewMqttMessage(String message) {
+        LOG.info("收到代码审查MQTT消息: " + message);
+        
+        SwingUtilities.invokeLater(() -> {
+            try {
+                // 将消息显示在评审结果区域
+                resultArea.setText(message);
+                resultArea.setCaretPosition(0);
+                
+                LOG.info("代码审查消息已显示在结果区域");
+            } catch (Exception e) {
+                LOG.error("处理代码审查MQTT消息时出错", e);
+            }
+        });
+    }
+    
+    /**
      * 添加文件到评审列表（供外部调用，如右键菜单）
      */
-    public void addFileToReview(String fileName, String description, int startLine, int endLine) {
+    public void addFileToReview(String fileName, String filePath, int startLine, int endLine) {
         if (fileListModel.size() > 0 && fileListModel.get(0).isPlaceholder()) {
             fileListModel.removeElementAt(0); // 移除提示项
         }
         
-        ReviewFileItem item = new ReviewFileItem(fileName, description, startLine, endLine, false);
+        ReviewFileItem item = new ReviewFileItem(fileName, filePath, startLine, endLine, false);
         fileListModel.addElement(item);
         
         // 更新结果区域

@@ -1,5 +1,6 @@
 package com.codereview.plugin.service;
 
+import com.codereview.plugin.auth.AuthService;
 import com.codereview.plugin.model.ReviewResult;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.components.ServiceManager;
@@ -10,7 +11,20 @@ import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
+import org.springframework.http.*;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.web.client.RestTemplate;
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
+import java.io.IOException;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.function.Consumer;
 
 /**
@@ -19,12 +33,20 @@ import java.util.function.Consumer;
 @Service
 public final class ReviewService {
     private static final Logger LOG = Logger.getInstance(ReviewService.class);
+    
+    // API配置
+    private static final String REVIEW_API_URL = "https://aide-at-test.apps.digiwincloud.com.cn/restful/standard/aide/submitReview";
+    
     private final Project project;
     private final AIService aiService;
+    private final AuthService authService;
+    private final Gson gson;
 
     public ReviewService(Project project) {
         this.project = project;
         this.aiService = AIService.getInstance();
+        this.authService = AuthService.getInstance();
+        this.gson = new Gson();
     }
 
     /**
@@ -32,6 +54,233 @@ public final class ReviewService {
      */
     public static ReviewService getInstance(@NotNull Project project) {
         return project.getService(ReviewService.class);
+    }
+
+    /**
+     * 代码审查文件项
+     */
+    public static class ReviewFileItem {
+        private String fileName;
+        private String filePath;
+        private String content;
+        private Integer startLine;
+        private Integer endLine;
+        
+        public ReviewFileItem(String fileName, String filePath, String content) {
+            this.fileName = fileName;
+            this.filePath = filePath;
+            this.content = content;
+        }
+        
+        public ReviewFileItem(String fileName, String filePath, String content, int startLine, int endLine) {
+            this.fileName = fileName;
+            this.filePath = filePath;
+            this.content = content;
+            this.startLine = startLine;
+            this.endLine = endLine;
+        }
+        
+        // getters and setters
+        public String getFileName() { return fileName; }
+        public String getFilePath() { return filePath; }
+        public String getContent() { return content; }
+        public Integer getStartLine() { return startLine; }
+        public Integer getEndLine() { return endLine; }
+    }
+
+    /**
+     * 审查多个文件或代码片段
+     * @param fileItems 要审查的文件项列表
+     * @param callback 结果回调
+     */
+    public void reviewFiles(List<ReviewFileItem> fileItems, Consumer<String> callback) {
+        if (!authService.isLoggedIn()) {
+            callback.accept("❌ 错误：用户未登录\n\n请先登录后再进行代码审查。");
+            return;
+        }
+        
+        if (fileItems == null || fileItems.isEmpty()) {
+            callback.accept("❌ 错误：没有要审查的文件\n\n请先添加文件或代码片段。");
+            return;
+        }
+        
+        LOG.info("开始代码审查，文件数量: " + fileItems.size());
+        
+        // 异步调用API
+        new Thread(() -> {
+            try {
+                String result = callReviewAPI(fileItems);
+                callback.accept(result);
+            } catch (Exception e) {
+                LOG.error("代码审查API调用失败", e);
+                callback.accept("❌ API调用失败：" + e.getMessage() + "\n\n请检查网络连接或联系管理员。");
+            }
+        }).start();
+    }
+    
+    /**
+     * 调用代码审查API
+     */
+    private String callReviewAPI(List<ReviewFileItem> fileItems) {
+        LOG.info("准备调用代码审查API，URL: " + REVIEW_API_URL);
+        
+        try {
+            RestTemplate restTemplate = new RestTemplate();
+            
+            // 设置请求头
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+            
+            // 添加token
+            String token = authService.getToken();
+            if (token != null) {
+                headers.add("token", token);
+                LOG.info("已添加token到请求头");
+            } else {
+                LOG.warn("未获取到有效token");
+            }
+            
+            // 构建multipart请求体
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            
+            // 添加文件
+            for (int i = 0; i < fileItems.size(); i++) {
+                ReviewFileItem item = fileItems.get(i);
+                LOG.info("添加文件 " + (i + 1) + ": " + item.getFileName() + ", 大小: " + item.getContent().length() + " 字符");
+                
+                // 创建文件资源
+                ByteArrayResource fileResource = new ByteArrayResource(item.getContent().getBytes()) {
+                    @Override
+                    public String getFilename() {
+                        return item.getFileName();
+                    }
+                };
+                
+                body.add("files", fileResource);
+            }
+            
+            // 构建fileInfo JSON数组
+            List<Map<String, Object>> fileInfoList = new ArrayList<>();
+            for (ReviewFileItem item : fileItems) {
+                Map<String, Object> fileInfo = new HashMap<>();
+                fileInfo.put("fileName", item.getFileName());
+                fileInfo.put("filePath", item.getFilePath());
+                
+                // 如果是代码片段，添加行范围
+                if (item.getStartLine() != null && item.getEndLine() != null) {
+                    fileInfo.put("line", item.getStartLine() + "-" + item.getEndLine());
+                    LOG.info("文件 " + item.getFileName() + " 包含行范围: " + item.getStartLine() + "-" + item.getEndLine());
+                } else {
+                    LOG.info("文件 " + item.getFileName() + " 是完整文件");
+                }
+                
+                fileInfoList.add(fileInfo);
+            }
+            
+            String fileInfoJson = gson.toJson(fileInfoList);
+            body.add("fileInfo", fileInfoJson);
+            
+            LOG.info("fileInfo JSON: " + fileInfoJson);
+            LOG.info("准备发送请求，包含 " + fileItems.size() + " 个文件");
+            
+            // 创建请求实体
+            HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+            
+            // 发送请求
+            long startTime = System.currentTimeMillis();
+            ResponseEntity<String> response = restTemplate.postForEntity(REVIEW_API_URL, requestEntity, String.class);
+            long endTime = System.currentTimeMillis();
+            
+            LOG.info("API调用完成，耗时: " + (endTime - startTime) + "ms");
+            LOG.info("响应状态码: " + response.getStatusCode());
+            LOG.info("响应内容: " + response.getBody());
+            
+            if (response.getStatusCode() == HttpStatus.OK) {
+                return parseApiResponse(response.getBody());
+            } else {
+                LOG.warn("API返回非200状态码: " + response.getStatusCode());
+                return "❌ API调用失败：状态码 " + response.getStatusCode() + "\n\n响应内容：\n" + response.getBody();
+            }
+            
+        } catch (Exception e) {
+            LOG.error("调用代码审查API时发生异常", e);
+            return "❌ API调用异常：" + e.getClass().getSimpleName() + ": " + e.getMessage() + 
+                   "\n\n请检查网络连接和API服务状态。";
+        }
+    }
+    
+    /**
+     * 解析API响应
+     */
+    private String parseApiResponse(String responseBody) {
+        try {
+            if (responseBody == null || responseBody.trim().isEmpty()) {
+                return "❌ API返回空响应";
+            }
+            
+            LOG.info("开始解析API响应");
+            
+            // 尝试解析JSON响应
+            JsonObject jsonResponse = new JsonParser().parse(responseBody).getAsJsonObject();
+            
+            StringBuilder result = new StringBuilder();
+            result.append("# 🔍 代码审查结果\n\n");
+            
+            // 检查是否有错误
+            if (jsonResponse.has("error") || jsonResponse.has("errorCode")) {
+                String errorMsg = jsonResponse.has("error") ? 
+                    jsonResponse.get("error").getAsString() : 
+                    jsonResponse.get("errorCode").getAsString();
+                result.append("❌ **审查失败**\n\n");
+                result.append("错误信息：").append(errorMsg).append("\n\n");
+                return result.toString();
+            }
+            
+            // 解析成功响应
+            if (jsonResponse.has("data")) {
+                JsonObject data = jsonResponse.getAsJsonObject("data");
+                
+                // 审查摘要
+                if (data.has("summary")) {
+                    result.append("## 📋 审查摘要\n");
+                    result.append(data.get("summary").getAsString()).append("\n\n");
+                }
+                
+                // 问题列表
+                if (data.has("issues")) {
+                    result.append("## ⚠️ 发现的问题\n");
+                    // 处理问题列表
+                    result.append(data.get("issues").getAsString()).append("\n\n");
+                }
+                
+                // 建议
+                if (data.has("suggestions")) {
+                    result.append("## 💡 改进建议\n");
+                    result.append(data.get("suggestions").getAsString()).append("\n\n");
+                }
+                
+                // 评分
+                if (data.has("score")) {
+                    result.append("## 📊 质量评分\n");
+                    result.append("**综合评分：").append(data.get("score").getAsString()).append("**\n\n");
+                }
+            } else {
+                // 如果没有标准的data字段，直接显示整个响应
+                result.append("## 📄 审查结果\n");
+                result.append("```json\n");
+                result.append(gson.toJson(jsonResponse));
+                result.append("\n```\n");
+            }
+            
+            result.append("---\n");
+            result.append("*审查完成时间：").append(new java.util.Date().toString()).append("*");
+            
+            return result.toString();
+            
+        } catch (Exception e) {
+            LOG.error("解析API响应时出错", e);
+            return "✅ 审查完成，但响应格式解析失败\n\n**原始响应：**\n" + responseBody;
+        }
     }
 
     /**
@@ -52,32 +301,26 @@ public final class ReviewService {
             return;
         }
 
-        // 在实际应用中，这里应该调用AIService进行代码审查
-        String fileExtension = currentFile.getExtension();
-        String language = fileExtension != null ? fileExtension : "text";
+        // 创建文件项并调用新的审查方法
+        List<ReviewFileItem> fileItems = new ArrayList<>();
+        String relativePath = getRelativeFilePath(currentFile);
+        fileItems.add(new ReviewFileItem(currentFile.getName(), relativePath, fileContent));
         
-        // 是否使用模拟数据（开发阶段使用）
-        boolean useMockData = true;
+        reviewFiles(fileItems, callback);
+    }
+    
+    /**
+     * 获取文件相对路径
+     */
+    private String getRelativeFilePath(VirtualFile file) {
+        String basePath = project.getBasePath();
+        String fullPath = file.getPath();
         
-        if (useMockData) {
-            // 使用模拟数据（当前阶段）
-            String mockResult = getMockReviewResult(currentFile.getName(), fileContent);
-            callback.accept(mockResult);
-        } else {
-            // 使用AI服务（未来实现）
-            aiService.analyzeCode(fileContent, language, new AIService.AIResponseCallback() {
-                @Override
-                public void onSuccess(ReviewResult result) {
-                    String formattedResult = formatReviewResult(result);
-                    callback.accept(formattedResult);
-                }
-
-                @Override
-                public void onError(String errorMessage) {
-                    callback.accept("AI代码审查出错：" + errorMessage);
-                }
-            });
+        if (basePath != null && fullPath.startsWith(basePath)) {
+            return fullPath.substring(basePath.length() + 1);
         }
+        
+        return fullPath;
     }
 
     /**
