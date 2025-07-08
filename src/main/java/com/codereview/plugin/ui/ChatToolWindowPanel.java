@@ -143,21 +143,20 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         centerPanel.setLayout(new BoxLayout(centerPanel, BoxLayout.Y_AXIS));
         centerPanel.setOpaque(false);
         
-        // 头像
-        // JBLabel avatarLabel = new JBLabel("🤖");
-        // avatarLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 48));
-        // avatarLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-        // centerPanel.add(avatarLabel);
-        
-        // centerPanel.add(Box.createVerticalStrut(16));
-        
-        // 标题
-        // JBLabel titleLabel = new JBLabel("鼎码智辅");
-        // titleLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 24));
-        // titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-        // centerPanel.add(titleLabel);
-        
-        // centerPanel.add(Box.createVerticalStrut(16));
+        // Digiwin风格AI能量圈SVG，直接加载资源文件
+        JLabel svgLabel = new JLabel();
+        svgLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        svgLabel.setPreferredSize(new Dimension(80, 80));
+        try {
+            // IntelliJ平台推荐用IconLoader加载SVG
+            javax.swing.Icon icon = com.intellij.openapi.util.IconLoader.getIcon("/icons/digiwin-ai-circle.svg", getClass());
+            svgLabel.setIcon(icon);
+        } catch (Exception ex) {
+            svgLabel.setText("D");
+        }
+        centerPanel.add(Box.createVerticalStrut(8));
+        centerPanel.add(svgLabel);
+        centerPanel.add(Box.createVerticalStrut(16));
         
         // 登录提示或欢迎信息
         JBLabel descLabel = new JBLabel();

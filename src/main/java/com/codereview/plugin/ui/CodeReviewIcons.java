@@ -11,5 +11,5 @@ public interface CodeReviewIcons {
     /**
      * 主要图标 - 用于工具窗口和动作
      */
-    Icon MAIN_ICON = IconLoader.getIcon("/icons/code-review.svg", CodeReviewIcons.class);
+    Icon MAIN_ICON = IconLoader.getIcon("/icons/digiwin-ai-circle.svg", CodeReviewIcons.class);
 } 

@@ -132,9 +132,15 @@ public class MainToolWindowPanel extends JBPanel<MainToolWindowPanel> {
         centerPanel.setBorder(JBUI.Borders.empty(80));
         
         // 图标
-        JBLabel iconLabel = new JBLabel("🔒");
-        iconLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 48));
+        JLabel iconLabel = new JLabel();
         iconLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        iconLabel.setPreferredSize(new Dimension(80, 80));
+        try {
+            javax.swing.Icon icon = com.intellij.openapi.util.IconLoader.getIcon("/icons/digiwin-ai-circle.svg", getClass());
+            iconLabel.setIcon(icon);
+        } catch (Exception ex) {
+            iconLabel.setText("D");
+        }
         centerPanel.add(iconLabel);
         
         centerPanel.add(Box.createVerticalStrut(20));
