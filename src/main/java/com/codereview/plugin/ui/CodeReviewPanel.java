@@ -260,7 +260,14 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         buttonPanel.setOpaque(false);
         
         reviewChangesButton = new JButton("评审变更");
-        reviewChangesButton.setPreferredSize(new Dimension(120, 35));
+        reviewChangesButton.setPreferredSize(reviewFileButton.getPreferredSize());
+        reviewChangesButton.setFont(reviewFileButton.getFont());
+        reviewChangesButton.setBackground(reviewFileButton.getBackground());
+        reviewChangesButton.setForeground(reviewFileButton.getForeground());
+        reviewChangesButton.setBorder(reviewFileButton.getBorder());
+        reviewChangesButton.setFocusPainted(reviewFileButton.isFocusPainted());
+        reviewChangesButton.setContentAreaFilled(reviewFileButton.isContentAreaFilled());
+        reviewChangesButton.setOpaque(reviewFileButton.isOpaque());
         reviewChangesButton.addActionListener(e -> {
             showMessage("🔄 正在获取Git变更并评审，请稍候...");
             SwingUtilities.invokeLater(() -> {
