@@ -258,9 +258,10 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         // 按钮区域 - 居中显示
         JPanel buttonPanel = new JBPanel<>(new FlowLayout(FlowLayout.CENTER));
         buttonPanel.setOpaque(false);
-        
+
         reviewChangesButton = new JButton("评审变更");
-        reviewChangesButton.setPreferredSize(reviewFileButton.getPreferredSize());
+        Dimension btnSize = reviewFileButton.getPreferredSize();
+        reviewChangesButton.setPreferredSize(btnSize);
         reviewChangesButton.setFont(reviewFileButton.getFont());
         reviewChangesButton.setBackground(reviewFileButton.getBackground());
         reviewChangesButton.setForeground(reviewFileButton.getForeground());
