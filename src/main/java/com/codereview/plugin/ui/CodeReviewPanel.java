@@ -324,15 +324,18 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         resultTable.setShowVerticalLines(true);
         resultTable.setShowHorizontalLines(true);
         
+        // 设置默认行高
+        resultTable.setRowHeight(80);
+        
         // 设置列宽 - 确保反馈列完全可见
         TableColumn filePathColumn = resultTable.getColumnModel().getColumn(0);
-        filePathColumn.setPreferredWidth(180);
-        filePathColumn.setMinWidth(120);
-        filePathColumn.setMaxWidth(250);
+        filePathColumn.setPreferredWidth(200);
+        filePathColumn.setMinWidth(150);
+        filePathColumn.setMaxWidth(300);
         
         TableColumn reviewColumn = resultTable.getColumnModel().getColumn(1);
-        reviewColumn.setPreferredWidth(350);
-        reviewColumn.setMinWidth(200);
+        reviewColumn.setPreferredWidth(400);
+        reviewColumn.setMinWidth(250);
         
         TableColumn feedbackColumn = resultTable.getColumnModel().getColumn(2);
         feedbackColumn.setPreferredWidth(100);
@@ -844,10 +847,10 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         
         SwingUtilities.invokeLater(() -> {
             try {
-                // 将消息显示在评审结果区域
-                parseAndDisplayResult(message);
+                // 将消息追加到评审结果区域
+                parseAndAppendResult(message);
                 
-                LOG.info("代码审查消息已显示在结果区域");
+                LOG.info("代码审查消息已追加显示在结果区域");
             } catch (Exception e) {
                 LOG.error("处理代码审查MQTT消息时出错", e);
             }
@@ -1171,7 +1174,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
     }
     
     /**
-     * 解析API返回结果并显示到表格中
+     * 解析API返回结果并显示到表格中（替换模式）
      */
     private void parseAndDisplayResult(String result) {
         try {
@@ -1180,16 +1183,16 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             
             // 尝试解析JSON格式的结果
             if (result.trim().startsWith("{") || result.trim().startsWith("[")) {
-                parseJsonResult(result);
+                parseJsonResult(result, false);
             } else if (result.contains("code_file_desc") && result.contains("code_rvw_rs_desc")) {
                 // 尝试解析包含指定字段的文本格式
-                parseTextResult(result);
+                parseTextResult(result, false);
             } else {
                 // 如果不是预期格式，显示原始结果
                 resultTableModel.addRow(new Object[]{
                     "评审结果",
                     result,
-                    ""
+                    new FeedbackButtons()
                 });
             }
             
@@ -1198,7 +1201,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                 resultTableModel.addRow(new Object[]{
                     "评审结果",
                     result,
-                    ""
+                    new FeedbackButtons()
                 });
             }
             
@@ -1210,7 +1213,47 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             resultTableModel.addRow(new Object[]{
                 "解析错误",
                 "解析评审结果时出错: " + e.getMessage() + "\n\n原始结果:\n" + result,
-                ""
+                new FeedbackButtons()
+            });
+        }
+    }
+    
+    /**
+     * 解析API返回结果并追加到表格中（追加模式）
+     */
+    private void parseAndAppendResult(String result) {
+        try {
+            // 如果表格中有初始提示行，先清除
+            if (resultTableModel.getRowCount() > 0) {
+                Object firstRowValue = resultTableModel.getValueAt(0, 0);
+                if ("暂无评审结果".equals(firstRowValue) || "系统消息".equals(firstRowValue)) {
+                    resultTableModel.setRowCount(0);
+                }
+            }
+            
+            // 尝试解析JSON格式的结果
+            if (result.trim().startsWith("{") || result.trim().startsWith("[")) {
+                parseJsonResult(result, true);
+            } else if (result.contains("code_file_desc") && result.contains("code_rvw_rs_desc")) {
+                // 尝试解析包含指定字段的文本格式
+                parseTextResult(result, true);
+            } else {
+                // 如果不是预期格式，追加原始结果
+                resultTableModel.addRow(new Object[]{
+                    "MQTT消息",
+                    result,
+                    new FeedbackButtons()
+                });
+            }
+            
+            adjustRowHeights();
+            
+        } catch (Exception e) {
+            LOG.error("解析MQTT评审结果失败", e);
+            resultTableModel.addRow(new Object[]{
+                "解析错误",
+                "解析MQTT评审结果时出错: " + e.getMessage() + "\n\n原始结果:\n" + result,
+                new FeedbackButtons()
             });
         }
     }
@@ -1218,7 +1261,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
     /**
      * 解析JSON格式的结果
      */
-    private void parseJsonResult(String result) {
+    private void parseJsonResult(String result, boolean isAppendMode) {
         try {
             JsonElement jsonElement = new JsonParser().parse(result);
             
@@ -1228,30 +1271,30 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                 // 检查是否有data数组
                 if (jsonObject.has("data") && jsonObject.get("data").isJsonArray()) {
                     JsonArray dataArray = jsonObject.getAsJsonArray("data");
-                    parseJsonArray(dataArray);
+                    parseJsonArray(dataArray, isAppendMode);
                 } else {
                     // 单个对象
-                    parseJsonObject(jsonObject);
+                    parseJsonObject(jsonObject, isAppendMode);
                 }
                 
             } else if (jsonElement.isJsonArray()) {
                 JsonArray jsonArray = jsonElement.getAsJsonArray();
-                parseJsonArray(jsonArray);
+                parseJsonArray(jsonArray, isAppendMode);
             }
             
         } catch (Exception e) {
             LOG.warn("JSON解析失败，尝试文本解析", e);
-            parseTextResult(result);
+            parseTextResult(result, isAppendMode);
         }
     }
     
     /**
      * 解析JSON数组
      */
-    private void parseJsonArray(JsonArray jsonArray) {
+    private void parseJsonArray(JsonArray jsonArray, boolean isAppendMode) {
         for (JsonElement element : jsonArray) {
             if (element.isJsonObject()) {
-                parseJsonObject(element.getAsJsonObject());
+                parseJsonObject(element.getAsJsonObject(), isAppendMode);
             }
         }
     }
@@ -1259,7 +1302,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
     /**
      * 解析JSON对象
      */
-    private void parseJsonObject(JsonObject jsonObject) {
+    private void parseJsonObject(JsonObject jsonObject, boolean isAppendMode) {
         String filePath = "";
         String reviewResult = "";
         
@@ -1294,8 +1337,9 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             });
         } else if (!reviewResult.isEmpty()) {
             // 只有评审结果，使用默认文件路径
+            String defaultPath = isAppendMode ? "MQTT消息" : "评审结果";
             resultTableModel.addRow(new Object[]{
-                "评审结果",
+                defaultPath,
                 reviewResult,
                 new FeedbackButtons()
             });
@@ -1307,7 +1351,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
     /**
      * 解析文本格式的结果
      */
-    private void parseTextResult(String result) {
+    private void parseTextResult(String result, boolean isAppendMode) {
         String[] lines = result.split("\n");
         String currentFilePath = "";
         String currentReview = "";
@@ -1476,15 +1520,33 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             setLineWrap(true);
             setWrapStyleWord(true);
             setOpaque(true);
+            setBorder(JBUI.Borders.empty(5));
             setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
         }
+
         @Override
         public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
-            setText(value == null ? "" : value.toString());
-            setForeground(isSelected ? table.getSelectionForeground() : table.getForeground());
-            setBackground(isSelected ? table.getSelectionBackground() : table.getBackground());
-            setBorder(null);
-            setCaretPosition(0);
+            setText(value != null ? value.toString() : "");
+            
+            if (isSelected) {
+                setBackground(table.getSelectionBackground());
+                setForeground(table.getSelectionForeground());
+            } else {
+                setBackground(table.getBackground());
+                setForeground(table.getForeground());
+            }
+            
+            // 根据内容自动调整行高
+            setSize(table.getColumnModel().getColumn(column).getWidth(), 0);
+            int preferredHeight = getPreferredSize().height;
+            
+            // 确保最小高度为80px，最大高度为200px
+            int newHeight = Math.max(80, Math.min(200, preferredHeight + 10));
+            
+            if (table.getRowHeight(row) != newHeight) {
+                table.setRowHeight(row, newHeight);
+            }
+            
             return this;
         }
     }
