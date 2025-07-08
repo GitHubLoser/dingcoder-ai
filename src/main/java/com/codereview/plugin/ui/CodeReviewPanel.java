@@ -33,6 +33,10 @@ import com.intellij.ui.SimpleTextAttributes;
 
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
+import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableCellRenderer;
+import javax.swing.table.TableColumn;
+import javax.swing.table.TableCellEditor;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
@@ -53,6 +57,10 @@ import java.util.List;
 import java.util.ArrayList;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.codereview.plugin.service.MQTTService;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 
 /**
  * 代码审查面板，包含评审文件、评审变更、评审结果三个区域
@@ -67,7 +75,8 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
     private JList<ReviewFileItem> fileList;
     private DefaultListModel<ReviewFileItem> fileListModel;
     private JTextArea changesArea;
-    private JTextArea resultArea;
+    private JTable resultTable;
+    private DefaultTableModel resultTableModel;
     private JButton addFileButton;
     private JButton reviewFileButton;
     private JButton getGitDiffButton;
@@ -103,14 +112,14 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         
         // 创建垂直分割面板 - 三个区域一列显示
         JSplitPane topSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
-        topSplitPane.setDividerLocation(200);
-        topSplitPane.setResizeWeight(0.3);
+        topSplitPane.setDividerLocation(150); // 文件区域高度
+        topSplitPane.setResizeWeight(0.15);
         topSplitPane.setDividerSize(0); // 去掉分割线
         topSplitPane.setBorder(null); // 去掉边框
         
         JSplitPane bottomSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
-        bottomSplitPane.setDividerLocation(200);
-        bottomSplitPane.setResizeWeight(0.5);
+        bottomSplitPane.setDividerLocation(60); // 变更区域高度（只需要容纳一个按钮）
+        bottomSplitPane.setResizeWeight(0.05);
         bottomSplitPane.setDividerSize(0); // 去掉分割线
         bottomSplitPane.setBorder(null); // 去掉边框
         
@@ -242,34 +251,39 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             border
         ));
         
-        // 变更内容区域
+        // 创建一个隐藏的文本区域用于存储git diff结果（不显示给用户）
         changesArea = new JTextArea();
-        changesArea.setEditable(false);
-        changesArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
-        changesArea.setText("点击\"获取Git变更\"按钮来获取本地代码变更：\n\n" +
-                          "功能说明：\n" +
-                          "• 执行 git diff 命令获取未提交的变更\n" +
-                          "• 显示具体的代码变更对比\n" +
-                          "• 新增、修改、删除的行数统计\n" +
-                          "• 然后可以对变更内容进行AI评审");
+        changesArea.setVisible(false);
         
-        JBScrollPane scrollPane = new JBScrollPane(changesArea);
-        scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
-        panel.add(scrollPane, BorderLayout.CENTER);
-        
-        // 按钮区域
-        JPanel buttonPanel = new JBPanel<>(new FlowLayout());
+        // 按钮区域 - 居中显示
+        JPanel buttonPanel = new JBPanel<>(new FlowLayout(FlowLayout.CENTER));
         buttonPanel.setOpaque(false);
         
-        getGitDiffButton = new JButton("获取Git变更");
-        getGitDiffButton.addActionListener(this::onGetGitDiff);
-        buttonPanel.add(getGitDiffButton);
-        
         reviewChangesButton = new JButton("评审变更");
-        reviewChangesButton.addActionListener(this::onReviewChanges);
+        reviewChangesButton.setPreferredSize(new Dimension(120, 35));
+        reviewChangesButton.addActionListener(e -> {
+            showMessage("🔄 正在获取Git变更并评审，请稍候...");
+            SwingUtilities.invokeLater(() -> {
+                try {
+                    String gitDiff = executeGitDiff();
+                    if (gitDiff != null && !gitDiff.trim().isEmpty()) {
+                        changesArea.setText(gitDiff);
+                        onReviewChangesInner(gitDiff);
+                    } else {
+                        showMessage("ℹ️ 没有发现Git变更\n\n可能的原因：\n" +
+                                "• 当前没有未提交的更改\n" +
+                                "• 当前目录不是Git仓库\n" +
+                                "• 所有更改已经提交");
+                    }
+                } catch (Exception ex) {
+                    showMessage("❌ 获取Git变更失败：" + ex.getMessage());
+                    LOG.error("Failed to get git diff", ex);
+                }
+            });
+        });
         buttonPanel.add(reviewChangesButton);
         
-        panel.add(buttonPanel, BorderLayout.SOUTH);
+        panel.add(buttonPanel, BorderLayout.CENTER);
         
         return panel;
     }
@@ -289,20 +303,60 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             border
         ));
         
-        // 结果显示区域
-        resultArea = new JTextArea();
-        resultArea.setEditable(false);
-        resultArea.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
-        resultArea.setText("点击\"审查当前文件\"或\"审查选中文件\"开始代码审查...\n\n" +
-                          "审查结果将包括：\n" +
-                          "• 代码质量评分\n" +
-                          "• 发现的问题和建议\n" +
-                          "• 代码规范检查\n" +
-                          "• 安全性分析\n" +
-                          "• 性能优化建议");
+        // 创建表格数据模型 - 三列：文件路径、评审意见、评审反馈
+        String[] columnNames = {"文件路径", "评审意见", "评审反馈"};
+        resultTableModel = new DefaultTableModel(columnNames, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false; // 表格只读
+            }
+        };
         
-        JBScrollPane scrollPane = new JBScrollPane(resultArea);
-        scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
+        // 创建表格
+        resultTable = new JTable(resultTableModel) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return column == 2; // 只有反馈按钮可编辑
+            }
+        };
+        resultTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        resultTable.setGridColor(BORDER_COLOR);
+        resultTable.setShowVerticalLines(true);
+        resultTable.setShowHorizontalLines(true);
+        
+        // 设置列宽 - 确保反馈列完全可见
+        TableColumn filePathColumn = resultTable.getColumnModel().getColumn(0);
+        filePathColumn.setPreferredWidth(180);
+        filePathColumn.setMinWidth(120);
+        filePathColumn.setMaxWidth(250);
+        
+        TableColumn reviewColumn = resultTable.getColumnModel().getColumn(1);
+        reviewColumn.setPreferredWidth(350);
+        reviewColumn.setMinWidth(200);
+        
+        TableColumn feedbackColumn = resultTable.getColumnModel().getColumn(2);
+        feedbackColumn.setPreferredWidth(100);
+        feedbackColumn.setMinWidth(100);
+        feedbackColumn.setMaxWidth(100);
+        
+        // 设置多行渲染器
+        resultTable.getColumnModel().getColumn(0).setCellRenderer(new MultiLineTableCellRenderer());
+        resultTable.getColumnModel().getColumn(1).setCellRenderer(new MultiLineTableCellRenderer());
+        
+        // 设置反馈按钮渲染器和编辑器
+        feedbackColumn.setCellRenderer(new FeedbackButtonRenderer());
+        feedbackColumn.setCellEditor(new FeedbackButtonEditor());
+        
+        // 添加初始提示行
+        resultTableModel.addRow(new Object[]{
+            "暂无评审结果",
+            "点击\"开始评审\"或\"评审变更\"开始代码审查...",
+            ""
+        });
+        
+        JBScrollPane scrollPane = new JBScrollPane(resultTable);
+        scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
         panel.add(scrollPane, BorderLayout.CENTER);
         
         return panel;
@@ -333,7 +387,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
     private void onAddCurrentFile(ActionEvent e) {
         VirtualFile currentFile = getCurrentFile();
         if (currentFile == null) {
-            resultArea.setText("❌ 没有打开的文件\n\n请先在编辑器中打开一个文件。");
+            showMessage("❌ 没有打开的文件\n\n请先在编辑器中打开一个文件。");
             return;
         }
         
@@ -346,19 +400,19 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         ReviewFileItem item = new ReviewFileItem(currentFile.getName(), relativePath, 0, 0, false);
         fileListModel.addElement(item);
         
-        resultArea.setText("✅ 已添加文件: " + currentFile.getName());
+        showMessage("✅ 已添加文件: " + currentFile.getName());
     }
     
     private void onAddSelectedCode(ActionEvent e) {
         String selectedCode = getSelectedCodeFromEditor();
         if (selectedCode == null || selectedCode.trim().isEmpty()) {
-            resultArea.setText("❌ 没有选中的代码\n\n请在编辑器中选中要评审的代码片段。");
+            showMessage("❌ 没有选中的代码\n\n请在编辑器中选中要评审的代码片段。");
             return;
         }
         
         VirtualFile currentFile = getCurrentFile();
         if (currentFile == null) {
-            resultArea.setText("❌ 无法确定当前文件\n\n请确保在编辑器中打开了文件并选中了代码。");
+            showMessage("❌ 无法确定当前文件\n\n请确保在编辑器中打开了文件并选中了代码。");
             return;
         }
         
@@ -380,7 +434,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         ReviewFileItem item = new ReviewFileItem(currentFile.getName(), relativePath, startLine, endLine, false);
         fileListModel.addElement(item);
         
-                resultArea.setText("✅ 已添加选中代码: " + currentFile.getName() + " (行 " + startLine + "-" + endLine + ")");
+        showMessage("✅ 已添加选中代码: " + currentFile.getName() + " (行 " + startLine + "-" + endLine + ")");
     }
     
     private void onAddProjectFiles(ActionEvent e) {
@@ -400,7 +454,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                     fileListModel.addElement(item);
                 }
                 
-                resultArea.setText("✅ 已添加 " + selectedFiles.size() + " 个项目文件");
+                showMessage("✅ 已添加 " + selectedFiles.size() + " 个项目文件");
             }
         }
     }
@@ -438,7 +492,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             fileListModel.addElement(new ReviewFileItem("提示", "点击 + 按钮或右键菜单添加要评审的文件", 0, 0, true));
         }
         
-        resultArea.setText("✅ 已删除 " + selectedIndices.length + " 个文件");
+        showMessage("✅ 已删除 " + selectedIndices.length + " 个文件");
     }
     
     private void deleteFileItem(ReviewFileItem item) {
@@ -449,16 +503,16 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             fileListModel.addElement(new ReviewFileItem("提示", "点击 + 按钮或右键菜单添加要评审的文件", 0, 0, true));
         }
         
-        resultArea.setText("✅ 已删除文件: " + item.getFileName());
+        showMessage("✅ 已删除文件: " + item.getFileName());
     }
 
     private void onReviewFiles(ActionEvent e) {
         if (fileListModel.isEmpty() || (fileListModel.size() == 1 && fileListModel.get(0).isPlaceholder())) {
-            resultArea.setText("❌ 没有要评审的文件\n\n请先添加文件或代码片段。");
+            showMessage("❌ 没有要评审的文件\n\n请先添加文件或代码片段。");
             return;
         }
         
-        resultArea.setText("🔄 正在进行代码评审，请稍候...\n\n准备文件...");
+        showMessage("🔄 正在进行代码评审，请稍候...\n\n准备文件...");
         
         // 构建ReviewService.ReviewFileItem列表
         List<ReviewService.ReviewFileItem> reviewItems = new ArrayList<>();
@@ -498,24 +552,23 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             }
             
             if (reviewItems.isEmpty()) {
-                resultArea.setText("❌ 没有有效的文件可以评审\n\n请检查文件是否可以访问。");
+                showMessage("❌ 没有有效的文件可以评审\n\n请检查文件是否可以访问。");
                 return;
             }
             
             LOG.info("准备评审 " + reviewItems.size() + " 个文件/代码片段");
-            resultArea.setText("🔄 正在调用评审API，请稍候...\n\n已准备 " + reviewItems.size() + " 个文件");
+            showMessage("🔄 正在调用评审API，请稍候...\n\n已准备 " + reviewItems.size() + " 个文件");
             
             // 调用新的评审服务
             reviewService.reviewFiles(reviewItems, result -> {
                 SwingUtilities.invokeLater(() -> {
-                    resultArea.setText(result);
-                    resultArea.setCaretPosition(0);
+                    parseAndDisplayResult(result);
                 });
             });
             
         } catch (Exception ex) {
             LOG.error("准备评审文件时出错", ex);
-            resultArea.setText("❌ 准备评审文件时出错：" + ex.getMessage() + "\n\n请检查文件权限和网络连接。");
+            showMessage("❌ 准备评审文件时出错：" + ex.getMessage() + "\n\n请检查文件权限和网络连接。");
         }
     }
     
@@ -634,62 +687,26 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         return null;
     }
     
-    private void onGetGitDiff(ActionEvent e) {
-        resultArea.setText("🔄 正在获取Git变更，请稍候...");
-        
-        // 在后台线程中执行git diff命令
-        SwingUtilities.invokeLater(() -> {
-            try {
-                String gitDiff = executeGitDiff();
-                if (gitDiff != null && !gitDiff.trim().isEmpty()) {
-                    changesArea.setText(gitDiff);
-                    resultArea.setText("✅ 已获取Git变更信息");
-                } else {
-                    changesArea.setText("没有检测到代码变更。\n\n可能的原因：\n" +
-                                      "• 当前没有未提交的更改\n" +
-                                      "• 当前目录不是Git仓库\n" +
-                                      "• 所有更改已经提交");
-                    resultArea.setText("ℹ️ 没有发现Git变更");
-                }
-            } catch (Exception ex) {
-                changesArea.setText("获取Git变更时出错：\n" + ex.getMessage() + "\n\n" +
-                                  "请确保：\n" +
-                                  "• 当前项目是Git仓库\n" +
-                                  "• 有读取权限\n" +
-                                  "• Git命令可用");
-                resultArea.setText("❌ 获取Git变更失败");
-                LOG.error("Failed to get git diff", ex);
-            }
-        });
-    }
-    
-    private void onReviewChanges(ActionEvent e) {
-        String changes = changesArea.getText().trim();
+    private void onReviewChangesInner(String changes) {
         if (changes.isEmpty() || changes.startsWith("点击") || changes.startsWith("没有检测到") || changes.startsWith("获取Git变更时出错")) {
-            resultArea.setText("❌ 错误：没有可评审的变更\n\n请先点击\"获取Git变更\"按钮获取代码变更。");
+            showMessage("❌ 错误：没有可评审的变更\n\n请先点击\"评审变更\"按钮获取代码变更。");
             return;
         }
-        
-        resultArea.setText("🔄 正在评审代码变更，请稍候...\n\n准备变更内容...");
-        
+        showMessage("🔄 正在评审代码变更，请稍候...\n\n准备变更内容...");
         try {
             // 将Git变更作为特殊文件进行评审
             List<ReviewService.ReviewFileItem> reviewItems = new ArrayList<>();
-            
             // 创建一个虚拟的"Git变更"文件项
             String projectName = project.getName();
             String changeFileName = projectName + "_git_changes.diff";
             String changeFilePath = "git_diff/" + changeFileName;
-            
             reviewItems.add(new ReviewService.ReviewFileItem(
                 changeFileName,
                 changeFilePath,
                 changes
             ));
-            
             LOG.info("准备评审Git变更，内容长度: " + changes.length() + " 字符");
-            resultArea.setText("🔄 正在调用变更评审API，请稍候...\n\n分析变更内容中...");
-            
+            showMessage("🔄 正在调用变更评审API，请稍候...\n\n分析变更内容中...");
             // 调用评审服务
             reviewService.reviewFiles(reviewItems, result -> {
                 SwingUtilities.invokeLater(() -> {
@@ -698,14 +715,12 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                                           "**审查类型：** 代码变更差异分析\n" +
                                           "**变更范围：** " + countChangedFiles(changes) + " 个文件\n\n" + 
                                           result;
-                    resultArea.setText(enhancedResult);
-                    resultArea.setCaretPosition(0);
+                    parseAndDisplayResult(enhancedResult);
                 });
             });
-            
         } catch (Exception ex) {
             LOG.error("评审变更时出错", ex);
-            resultArea.setText("❌ 评审变更时出错：" + ex.getMessage() + "\n\n请检查网络连接和API服务状态。");
+            showMessage("❌ 评审变更时出错：" + ex.getMessage() + "\n\n请检查网络连接和API服务状态。");
         }
     }
     
@@ -830,8 +845,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         SwingUtilities.invokeLater(() -> {
             try {
                 // 将消息显示在评审结果区域
-                resultArea.setText(message);
-                resultArea.setCaretPosition(0);
+                parseAndDisplayResult(message);
                 
                 LOG.info("代码审查消息已显示在结果区域");
             } catch (Exception e) {
@@ -852,7 +866,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         fileListModel.addElement(item);
         
         // 更新结果区域
-        resultArea.setText("✅ 已添加: " + fileName + 
+        showMessage("✅ 已添加: " + fileName + 
                           (startLine > 0 ? " (行 " + startLine + "-" + endLine + ")" : ""));
     }
     
@@ -1140,6 +1154,338 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                     setIcon(fileType.getIcon());
                 }
             }
+        }
+    }
+    
+    /**
+     * 显示消息到表格的第一行
+     */
+    private void showMessage(String message) {
+        // 清空表格并显示消息
+        resultTableModel.setRowCount(0);
+        resultTableModel.addRow(new Object[]{
+            "系统消息",
+            message,
+            ""
+        });
+    }
+    
+    /**
+     * 解析API返回结果并显示到表格中
+     */
+    private void parseAndDisplayResult(String result) {
+        try {
+            // 清空现有数据
+            resultTableModel.setRowCount(0);
+            
+            // 尝试解析JSON格式的结果
+            if (result.trim().startsWith("{") || result.trim().startsWith("[")) {
+                parseJsonResult(result);
+            } else if (result.contains("code_file_desc") && result.contains("code_rvw_rs_desc")) {
+                // 尝试解析包含指定字段的文本格式
+                parseTextResult(result);
+            } else {
+                // 如果不是预期格式，显示原始结果
+                resultTableModel.addRow(new Object[]{
+                    "评审结果",
+                    result,
+                    ""
+                });
+            }
+            
+            // 如果没有解析到任何结果，显示原始内容
+            if (resultTableModel.getRowCount() == 0) {
+                resultTableModel.addRow(new Object[]{
+                    "评审结果",
+                    result,
+                    ""
+                });
+            }
+            
+            adjustRowHeights();
+            
+        } catch (Exception e) {
+            LOG.error("解析评审结果失败", e);
+            resultTableModel.setRowCount(0);
+            resultTableModel.addRow(new Object[]{
+                "解析错误",
+                "解析评审结果时出错: " + e.getMessage() + "\n\n原始结果:\n" + result,
+                ""
+            });
+        }
+    }
+    
+    /**
+     * 解析JSON格式的结果
+     */
+    private void parseJsonResult(String result) {
+        try {
+            JsonElement jsonElement = new JsonParser().parse(result);
+            
+            if (jsonElement.isJsonObject()) {
+                JsonObject jsonObject = jsonElement.getAsJsonObject();
+                
+                // 检查是否有data数组
+                if (jsonObject.has("data") && jsonObject.get("data").isJsonArray()) {
+                    JsonArray dataArray = jsonObject.getAsJsonArray("data");
+                    parseJsonArray(dataArray);
+                } else {
+                    // 单个对象
+                    parseJsonObject(jsonObject);
+                }
+                
+            } else if (jsonElement.isJsonArray()) {
+                JsonArray jsonArray = jsonElement.getAsJsonArray();
+                parseJsonArray(jsonArray);
+            }
+            
+        } catch (Exception e) {
+            LOG.warn("JSON解析失败，尝试文本解析", e);
+            parseTextResult(result);
+        }
+    }
+    
+    /**
+     * 解析JSON数组
+     */
+    private void parseJsonArray(JsonArray jsonArray) {
+        for (JsonElement element : jsonArray) {
+            if (element.isJsonObject()) {
+                parseJsonObject(element.getAsJsonObject());
+            }
+        }
+    }
+    
+    /**
+     * 解析JSON对象
+     */
+    private void parseJsonObject(JsonObject jsonObject) {
+        String filePath = "";
+        String reviewResult = "";
+        
+        // 提取code_file_desc字段
+        if (jsonObject.has("code_file_desc")) {
+            filePath = jsonObject.get("code_file_desc").getAsString();
+        } else if (jsonObject.has("file_path") || jsonObject.has("filePath")) {
+            filePath = jsonObject.has("file_path") ? 
+                jsonObject.get("file_path").getAsString() : 
+                jsonObject.get("filePath").getAsString();
+        }
+        
+        // 提取code_rvw_rs_desc字段
+        if (jsonObject.has("code_rvw_rs_desc")) {
+            reviewResult = jsonObject.get("code_rvw_rs_desc").getAsString();
+        } else if (jsonObject.has("review_result") || jsonObject.has("reviewResult")) {
+            reviewResult = jsonObject.has("review_result") ? 
+                jsonObject.get("review_result").getAsString() : 
+                jsonObject.get("reviewResult").getAsString();
+        } else if (jsonObject.has("message") || jsonObject.has("content")) {
+            reviewResult = jsonObject.has("message") ? 
+                jsonObject.get("message").getAsString() : 
+                jsonObject.get("content").getAsString();
+        }
+        
+        // 如果都有值，添加到表格
+        if (!filePath.isEmpty() && !reviewResult.isEmpty()) {
+            resultTableModel.addRow(new Object[]{
+                filePath,
+                reviewResult,
+                new FeedbackButtons()
+            });
+        } else if (!reviewResult.isEmpty()) {
+            // 只有评审结果，使用默认文件路径
+            resultTableModel.addRow(new Object[]{
+                "评审结果",
+                reviewResult,
+                new FeedbackButtons()
+            });
+        }
+        
+        adjustRowHeights();
+    }
+    
+    /**
+     * 解析文本格式的结果
+     */
+    private void parseTextResult(String result) {
+        String[] lines = result.split("\n");
+        String currentFilePath = "";
+        String currentReview = "";
+        
+        for (String line : lines) {
+            if (line.contains("code_file_desc")) {
+                // 提取文件路径
+                int start = line.indexOf("\"code_file_desc\":");
+                if (start != -1) {
+                    String temp = line.substring(start + 17);
+                    int endQuote = temp.indexOf("\"", 1);
+                    if (endQuote != -1) {
+                        currentFilePath = temp.substring(1, endQuote + 1);
+                    }
+                }
+            } else if (line.contains("code_rvw_rs_desc")) {
+                // 提取评审意见
+                int start = line.indexOf("\"code_rvw_rs_desc\":");
+                if (start != -1) {
+                    String temp = line.substring(start + 19);
+                    int endQuote = temp.indexOf("\"", 1);
+                    if (endQuote != -1) {
+                        currentReview = temp.substring(1, endQuote + 1);
+                    }
+                }
+                
+                // 如果都有值，添加到表格
+                if (!currentFilePath.isEmpty() && !currentReview.isEmpty()) {
+                    resultTableModel.addRow(new Object[]{
+                        currentFilePath,
+                        currentReview,
+                        new FeedbackButtons()
+                    });
+                    currentFilePath = "";
+                    currentReview = "";
+                }
+            }
+        }
+        
+        adjustRowHeights();
+    }
+    
+    /**
+     * 反馈按钮容器类
+     */
+    private static class FeedbackButtons {
+        @Override
+        public String toString() {
+            return "按钮";
+        }
+    }
+    
+    /**
+     * 反馈按钮渲染器
+     */
+    private class FeedbackButtonRenderer implements TableCellRenderer {
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected,
+                                                       boolean hasFocus, int row, int column) {
+            JPanel panel = new JPanel(new FlowLayout(FlowLayout.CENTER, 2, 2));
+            panel.setOpaque(true);
+            panel.setBackground(isSelected ? table.getSelectionBackground() : table.getBackground());
+            JButton confirmButton = new JButton("✅");
+            confirmButton.setPreferredSize(new Dimension(30, 30));
+            confirmButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 16));
+            confirmButton.setFocusable(false);
+            confirmButton.setMargin(new Insets(0,0,0,0));
+            confirmButton.setBorderPainted(false);
+            JButton falsePositiveButton = new JButton("❎");
+            falsePositiveButton.setPreferredSize(new Dimension(30, 30));
+            falsePositiveButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 16));
+            falsePositiveButton.setFocusable(false);
+            falsePositiveButton.setMargin(new Insets(0,0,0,0));
+            falsePositiveButton.setBorderPainted(false);
+            panel.add(confirmButton);
+            panel.add(falsePositiveButton);
+            return panel;
+        }
+    }
+    
+    /**
+     * 反馈按钮编辑器
+     */
+    private class FeedbackButtonEditor extends AbstractCellEditor implements TableCellEditor {
+        private JPanel panel;
+        private JButton confirmButton;
+        private JButton falsePositiveButton;
+        private int editingRow;
+        
+        public FeedbackButtonEditor() {
+            panel = new JPanel(new FlowLayout(FlowLayout.CENTER, 2, 2));
+            confirmButton = new JButton("✅");
+            confirmButton.setPreferredSize(new Dimension(30, 30));
+            confirmButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 16));
+            confirmButton.setFocusable(false);
+            confirmButton.setMargin(new Insets(0,0,0,0));
+            confirmButton.setBorderPainted(false);
+            falsePositiveButton = new JButton("❎");
+            falsePositiveButton.setPreferredSize(new Dimension(30, 30));
+            falsePositiveButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 16));
+            falsePositiveButton.setFocusable(false);
+            falsePositiveButton.setMargin(new Insets(0,0,0,0));
+            falsePositiveButton.setBorderPainted(false);
+            confirmButton.addActionListener(e -> {
+                onFeedbackClick("confirmed", editingRow);
+                fireEditingStopped();
+            });
+            falsePositiveButton.addActionListener(e -> {
+                onFeedbackClick("false_positive", editingRow);
+                fireEditingStopped();
+            });
+            panel.add(confirmButton);
+            panel.add(falsePositiveButton);
+        }
+        
+        @Override
+        public Component getTableCellEditorComponent(JTable table, Object value, boolean isSelected,
+                                                     int row, int column) {
+            editingRow = row;
+            return panel;
+        }
+        
+        @Override
+        public Object getCellEditorValue() {
+            return new FeedbackButtons();
+        }
+        
+        private void onFeedbackClick(String feedback, int row) {
+            // 获取当前行的文件路径和评审意见
+            String filePath = (String) resultTableModel.getValueAt(row, 0);
+            String review = (String) resultTableModel.getValueAt(row, 1);
+            
+            LOG.info("用户反馈: " + feedback + ", 文件: " + filePath);
+            
+            // 可以在这里调用API提交反馈
+            // TODO: 实现反馈提交逻辑
+            
+            // 更新按钮状态或样式
+            if ("confirmed".equals(feedback)) {
+                showMessage("✅ 已确认评审意见: " + filePath);
+            } else if ("false_positive".equals(feedback)) {
+                showMessage("⚠️ 已标记为误报: " + filePath);
+            }
+        }
+    }
+    
+    /**
+     * 自动调整行高
+     */
+    private void adjustRowHeights() {
+        for (int row = 0; row < resultTable.getRowCount(); row++) {
+            int maxHeight = 30;
+            for (int col = 0; col < 2; col++) {
+                TableCellRenderer renderer = resultTable.getCellRenderer(row, col);
+                Component comp = renderer.getTableCellRendererComponent(resultTable, resultTable.getValueAt(row, col), false, false, row, col);
+                int height = comp.getPreferredSize().height;
+                maxHeight = Math.max(maxHeight, height);
+            }
+            resultTable.setRowHeight(row, maxHeight + 6);
+        }
+    }
+
+    // 多行自动换行渲染器
+    private static class MultiLineTableCellRenderer extends JTextArea implements TableCellRenderer {
+        public MultiLineTableCellRenderer() {
+            setLineWrap(true);
+            setWrapStyleWord(true);
+            setOpaque(true);
+            setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
+        }
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+            setText(value == null ? "" : value.toString());
+            setForeground(isSelected ? table.getSelectionForeground() : table.getForeground());
+            setBackground(isSelected ? table.getSelectionBackground() : table.getBackground());
+            setBorder(null);
+            setCaretPosition(0);
+            return this;
         }
     }
 } 
