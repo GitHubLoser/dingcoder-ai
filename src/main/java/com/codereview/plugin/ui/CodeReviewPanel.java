@@ -1430,20 +1430,57 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             JPanel panel = new JPanel(new FlowLayout(FlowLayout.CENTER, 2, 2));
             panel.setOpaque(true);
             panel.setBackground(isSelected ? table.getSelectionBackground() : table.getBackground());
-            JButton confirmButton = new JButton("✅");
-            confirmButton.setPreferredSize(new Dimension(30, 30));
-            confirmButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 16));
+            JButton confirmButton = new JButton("✅ 已确认");
+            confirmButton.setPreferredSize(new Dimension(90, 32));
+            confirmButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
             confirmButton.setFocusable(false);
             confirmButton.setMargin(new Insets(0,0,0,0));
-            confirmButton.setBorderPainted(false);
-            confirmButton.setEnabled(mqttReceived); // 根据mqttReceived控制可用
-            JButton falsePositiveButton = new JButton("❎");
-            falsePositiveButton.setPreferredSize(new Dimension(30, 30));
-            falsePositiveButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 16));
+            confirmButton.setBorder(BorderFactory.createCompoundBorder(
+                new javax.swing.border.LineBorder(new Color(220,220,220), 1, true), // 圆角淡灰色细边框
+                BorderFactory.createEmptyBorder(2, 10, 2, 10)
+            ));
+            confirmButton.setContentAreaFilled(true);
+            confirmButton.setBackground(Color.WHITE);
+            confirmButton.setEnabled(mqttReceived);
+            confirmButton.setForeground(new Color(100,100,100));
+            confirmButton.setOpaque(true);
+            confirmButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            confirmButton.addMouseListener(new java.awt.event.MouseAdapter() {
+                @Override
+                public void mouseEntered(java.awt.event.MouseEvent e) {
+                    confirmButton.setBackground(new Color(245,245,245));
+                }
+                @Override
+                public void mouseExited(java.awt.event.MouseEvent e) {
+                    confirmButton.setBackground(Color.WHITE);
+                }
+            });
+
+            JButton falsePositiveButton = new JButton("❎ 误报");
+            falsePositiveButton.setPreferredSize(new Dimension(90, 32));
+            falsePositiveButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
             falsePositiveButton.setFocusable(false);
             falsePositiveButton.setMargin(new Insets(0,0,0,0));
-            falsePositiveButton.setBorderPainted(false);
-            falsePositiveButton.setEnabled(mqttReceived); // 根据mqttReceived控制可用
+            falsePositiveButton.setBorder(BorderFactory.createCompoundBorder(
+                new javax.swing.border.LineBorder(new Color(220,220,220), 1, true),
+                BorderFactory.createEmptyBorder(2, 10, 2, 10)
+            ));
+            falsePositiveButton.setContentAreaFilled(true);
+            falsePositiveButton.setBackground(Color.WHITE);
+            falsePositiveButton.setEnabled(mqttReceived);
+            falsePositiveButton.setForeground(new Color(100,100,100));
+            falsePositiveButton.setOpaque(true);
+            falsePositiveButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            falsePositiveButton.addMouseListener(new java.awt.event.MouseAdapter() {
+                @Override
+                public void mouseEntered(java.awt.event.MouseEvent e) {
+                    falsePositiveButton.setBackground(new Color(245,245,245));
+                }
+                @Override
+                public void mouseExited(java.awt.event.MouseEvent e) {
+                    falsePositiveButton.setBackground(Color.WHITE);
+                }
+            });
             panel.add(confirmButton);
             panel.add(falsePositiveButton);
             return panel;
@@ -1461,20 +1498,57 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         
         public FeedbackButtonEditor() {
             panel = new JPanel(new FlowLayout(FlowLayout.CENTER, 2, 2));
-            confirmButton = new JButton("✅");
-            confirmButton.setPreferredSize(new Dimension(30, 30));
-            confirmButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 16));
+            confirmButton = new JButton("✅ 已确认");
+            confirmButton.setPreferredSize(new Dimension(90, 32));
+            confirmButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
             confirmButton.setFocusable(false);
             confirmButton.setMargin(new Insets(0,0,0,0));
-            confirmButton.setBorderPainted(false);
-            confirmButton.setEnabled(mqttReceived); // 根据mqttReceived控制可用
-            falsePositiveButton = new JButton("❎");
-            falsePositiveButton.setPreferredSize(new Dimension(30, 30));
-            falsePositiveButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 16));
+            confirmButton.setBorder(BorderFactory.createCompoundBorder(
+                new javax.swing.border.LineBorder(new Color(220,220,220), 1, true), // 圆角淡灰色细边框
+                BorderFactory.createEmptyBorder(2, 10, 2, 10)
+            ));
+            confirmButton.setContentAreaFilled(true);
+            confirmButton.setBackground(Color.WHITE);
+            confirmButton.setEnabled(mqttReceived);
+            confirmButton.setForeground(new Color(100,100,100));
+            confirmButton.setOpaque(true);
+            confirmButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            confirmButton.addMouseListener(new java.awt.event.MouseAdapter() {
+                @Override
+                public void mouseEntered(java.awt.event.MouseEvent e) {
+                    confirmButton.setBackground(new Color(245,245,245));
+                }
+                @Override
+                public void mouseExited(java.awt.event.MouseEvent e) {
+                    confirmButton.setBackground(Color.WHITE);
+                }
+            });
+
+            falsePositiveButton = new JButton("❎ 误报");
+            falsePositiveButton.setPreferredSize(new Dimension(90, 32));
+            falsePositiveButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
             falsePositiveButton.setFocusable(false);
             falsePositiveButton.setMargin(new Insets(0,0,0,0));
-            falsePositiveButton.setBorderPainted(false);
-            falsePositiveButton.setEnabled(mqttReceived); // 根据mqttReceived控制可用
+            falsePositiveButton.setBorder(BorderFactory.createCompoundBorder(
+                new javax.swing.border.LineBorder(new Color(220,220,220), 1, true),
+                BorderFactory.createEmptyBorder(2, 10, 2, 10)
+            ));
+            falsePositiveButton.setContentAreaFilled(true);
+            falsePositiveButton.setBackground(Color.WHITE);
+            falsePositiveButton.setEnabled(mqttReceived);
+            falsePositiveButton.setForeground(new Color(100,100,100));
+            falsePositiveButton.setOpaque(true);
+            falsePositiveButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            falsePositiveButton.addMouseListener(new java.awt.event.MouseAdapter() {
+                @Override
+                public void mouseEntered(java.awt.event.MouseEvent e) {
+                    falsePositiveButton.setBackground(new Color(245,245,245));
+                }
+                @Override
+                public void mouseExited(java.awt.event.MouseEvent e) {
+                    falsePositiveButton.setBackground(Color.WHITE);
+                }
+            });
             confirmButton.addActionListener(e -> {
                 onFeedbackClick("confirmed", editingRow);
                 fireEditingStopped();

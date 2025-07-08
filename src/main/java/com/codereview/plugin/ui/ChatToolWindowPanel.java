@@ -190,14 +190,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         inputField.setRows(1);  // 初始显示1行
         
         // 通义灵码风格的字体设置
-        Font inputFont = new Font("PingFang SC", Font.PLAIN, 14);
-        if (!inputFont.getFamily().equals("PingFang SC")) {
-            inputFont = new Font("Microsoft YaHei", Font.PLAIN, 14);
-        }
-        if (!inputFont.getFamily().equals("Microsoft YaHei")) {
-            inputFont = UIUtil.getLabelFont().deriveFont(14f);
-        }
-        inputField.setFont(inputFont);
+        inputField.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
         
         // 设置背景色和前景色
         inputField.setBackground(INPUT_BACKGROUND_COLOR);
@@ -450,7 +443,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             bubble.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
             bubble.setLayout(new BoxLayout(bubble, BoxLayout.X_AXIS));
             JLabel label = new JLabel(content);
-            label.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 16));
+            label.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 14));
             label.setForeground(new JBColor(new Color(33, 150, 243), new Color(120, 170, 255)));
             bubble.add(label);
             outerPanel.add(bubble);
@@ -468,7 +461,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             bubble.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
             bubble.setLayout(new BoxLayout(bubble, BoxLayout.X_AXIS));
             JLabel label = new JLabel("<html>" + content.replace("\n", "<br>") + "</html>");
-            label.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 15));
+            label.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
             // 使用更深的文字颜色
             label.setForeground(new JBColor(new Color(31, 35, 40), new Color(230, 237, 243)));
             bubble.add(label);
@@ -490,7 +483,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
 
             // 生成Java文件按钮
             JButton generateButton = new JButton("生成Java文件");
-            generateButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 13));
+            generateButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
             generateButton.setForeground(new JBColor(Color.WHITE, Color.WHITE));
             generateButton.setBackground(new JBColor(new Color(0x2B5AB8), new Color(0x2B5AB8)));
             generateButton.setBorder(BorderFactory.createEmptyBorder(6, 12, 6, 12));
@@ -572,7 +565,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             bubble.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
             bubble.setLayout(new BoxLayout(bubble, BoxLayout.X_AXIS));
             JLabel label = new JLabel("<html>" + content.replace("\n", "<br>") + "</html>");
-            label.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 15));
+            label.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
             label.setForeground(new JBColor(new Color(33, 33, 33), new Color(220, 220, 220)));
             bubble.add(label);
             outerPanel.add(bubble);
@@ -611,7 +604,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         button.setBackground(bgColor);
         button.setForeground(Color.WHITE);
         button.setBorder(JBUI.Borders.empty(8, 16));
-        button.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
+        button.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
         button.setCursor(new Cursor(Cursor.HAND_CURSOR));
         
         button.addMouseListener(new MouseAdapter() {
@@ -635,13 +628,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     private JButton createModernSendButton() {
         JButton button = new JButton("发送");
         button.setPreferredSize(new Dimension(60, 36));
-        button.setFont(new Font("PingFang SC", Font.PLAIN, 13));
-        if (!button.getFont().getFamily().equals("PingFang SC")) {
-            button.setFont(new Font("Microsoft YaHei", Font.PLAIN, 13));
-        }
-        if (!button.getFont().getFamily().equals("Microsoft YaHei")) {
-            button.setFont(UIUtil.getLabelFont().deriveFont(13f));
-        }
+        button.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
         
         // 设置按钮样式
         button.setBackground(SEND_BUTTON_COLOR);
@@ -703,7 +690,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         
         // 创建批量生成按钮
         JButton batchGenerateButton = new JButton("批量生成全部文件");
-        batchGenerateButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 13));
+        batchGenerateButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
         batchGenerateButton.setForeground(new JBColor(Color.WHITE, Color.WHITE));
         batchGenerateButton.setBackground(new JBColor(new Color(0x2B5AB8), new Color(0x2B5AB8)));
         batchGenerateButton.setBorder(BorderFactory.createEmptyBorder(6, 12, 6, 12));
