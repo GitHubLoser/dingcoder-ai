@@ -69,6 +69,8 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 
 /**
  * 代码审查面板，包含评审文件、评审变更、评审结果三个区域
@@ -127,14 +129,12 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         
         // 创建垂直分割面板 - 三个区域一列显示
         JSplitPane topSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
-        topSplitPane.setDividerLocation(150); // 文件区域高度
         topSplitPane.setResizeWeight(0.15);
         topSplitPane.setDividerSize(0); // 去掉分割线
         topSplitPane.setBorder(null); // 去掉边框
         
         JSplitPane bottomSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
-        bottomSplitPane.setDividerLocation(60); // 变更区域高度（只需要容纳一个按钮）
-        bottomSplitPane.setResizeWeight(0.05);
+        bottomSplitPane.setResizeWeight(0.0); // 变更区域固定大小，不随整体缩放
         bottomSplitPane.setDividerSize(0); // 去掉分割线
         bottomSplitPane.setBorder(null); // 去掉边框
         
@@ -153,6 +153,44 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         topSplitPane.setBottomComponent(bottomSplitPane);
         
         add(topSplitPane, BorderLayout.CENTER);
+        
+        // 添加组件监听器，在面板大小变化时重新计算分割位置
+        addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentResized(ComponentEvent e) {
+                SwingUtilities.invokeLater(() -> adjustSplitPaneLocations(topSplitPane, bottomSplitPane));
+            }
+            
+            @Override
+            public void componentShown(ComponentEvent e) {
+                SwingUtilities.invokeLater(() -> adjustSplitPaneLocations(topSplitPane, bottomSplitPane));
+            }
+        });
+        
+        // 延迟设置初始分割位置，确保组件已完成布局
+        SwingUtilities.invokeLater(() -> adjustSplitPaneLocations(topSplitPane, bottomSplitPane));
+    }
+    
+    /**
+     * 根据当前面板大小调整分割位置
+     */
+    private void adjustSplitPaneLocations(JSplitPane topSplitPane, JSplitPane bottomSplitPane) {
+        int totalHeight = getHeight();
+        if (totalHeight > 0) {
+            // 文件区域：最小120px，最大200px，占总高度的15%
+            int fileAreaHeight = Math.max(120, Math.min(200, (int)(totalHeight * 0.15)));
+            
+            // 变更区域：固定50px（更紧凑的高度）
+            int changesAreaHeight = 50;
+            
+            // 设置分割位置
+            topSplitPane.setDividerLocation(fileAreaHeight);
+            bottomSplitPane.setDividerLocation(changesAreaHeight);
+            
+            // 强制重新验证和重绘
+            topSplitPane.revalidate();
+            bottomSplitPane.revalidate();
+        }
     }
     
     private JPanel createFilePanel() {
@@ -284,12 +322,14 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         changesArea.setVisible(false);
         
         // 按钮区域 - 居中显示
-        JPanel buttonPanel = new JBPanel<>(new FlowLayout(FlowLayout.CENTER));
+        JPanel buttonPanel = new JBPanel<>(new FlowLayout(FlowLayout.CENTER, 10, 5)); // 居中对齐，水平间距10px，垂直间距5px
         buttonPanel.setOpaque(false);
-        buttonPanel.setPreferredSize(new Dimension(200, 60)); // 让面板高度足够，按钮不会被裁剪
+        buttonPanel.setPreferredSize(new Dimension(200, 50));
+        buttonPanel.setMinimumSize(new Dimension(150, 50));
+        buttonPanel.setBorder(BorderFactory.createEmptyBorder(5, 0, 5, 0));
 
         reviewChangesButton = new JButton("评审变更");
-        reviewChangesButton.setPreferredSize(new Dimension(120, 40)); // 固定宽高
+        reviewChangesButton.setPreferredSize(new Dimension(100, 30)); // 调整按钮大小
         reviewChangesButton.setFont(reviewFileButton.getFont());
         reviewChangesButton.setBackground(reviewFileButton.getBackground());
         reviewChangesButton.setForeground(reviewFileButton.getForeground());
