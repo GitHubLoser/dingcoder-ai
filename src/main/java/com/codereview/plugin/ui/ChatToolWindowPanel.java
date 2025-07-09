@@ -541,6 +541,11 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             editorEx.setColorsScheme(colorsScheme);
             editorEx.setBackgroundColor(new JBColor(new Color(250, 250, 250), new Color(40, 44, 50)));
             editorEx.getColorsScheme().setEditorFontName("JetBrains Mono");
+            
+            // 启用编辑器的复制功能
+            editorEx.setViewer(false); // 设置为可编辑模式，这样可以选择和复制
+            editorEx.setOneLineMode(false);
+            
             message.setEditor(editor);
             JComponent editorComponent = editor.getComponent();
             editorComponent.setVisible(false); // 默认折叠
@@ -552,6 +557,38 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                 toggleButton.setText((expanded ? "▼ " : "▶ ") + classLine);
                 foldPanel.revalidate();
                 foldPanel.repaint();
+            });
+            
+            // 为编辑器添加右键菜单
+            editorComponent.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mousePressed(MouseEvent e) {
+                    if (e.isPopupTrigger()) {
+                        showEditorContextMenu(e, editor, content);
+                    }
+                }
+                
+                @Override
+                public void mouseReleased(MouseEvent e) {
+                    if (e.isPopupTrigger()) {
+                        showEditorContextMenu(e, editor, content);
+                    }
+                }
+            });
+            
+            // 为编辑器添加键盘快捷键支持
+            editorComponent.getInputMap().put(KeyStroke.getKeyStroke(KeyEvent.VK_C, Toolkit.getDefaultToolkit().getMenuShortcutKeyMask()), "copy");
+            editorComponent.getActionMap().put("copy", new AbstractAction() {
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    String selectedText = editor.getSelectionModel().getSelectedText();
+                    if (selectedText != null && !selectedText.isEmpty()) {
+                        copyToClipboard(selectedText);
+                    } else {
+                        // 如果没有选中文本，复制全部内容
+                        copyToClipboard(content);
+                    }
+                }
             });
 
             foldPanel.add(titlePanel, BorderLayout.NORTH);
@@ -670,6 +707,33 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         } catch (Exception e) {
             LOG.error("复制到剪贴板失败", e);
         }
+    }
+    
+    /**
+     * 显示编辑器的右键菜单
+     */
+    private void showEditorContextMenu(MouseEvent e, Editor editor, String content) {
+        JPopupMenu popup = new JPopupMenu();
+        
+        // 复制选中内容菜单项
+        JMenuItem copySelectedItem = new JMenuItem("复制选中内容");
+        copySelectedItem.addActionListener(evt -> {
+            String selectedText = editor.getSelectionModel().getSelectedText();
+            if (selectedText != null && !selectedText.isEmpty()) {
+                copyToClipboard(selectedText);
+            }
+        });
+        popup.add(copySelectedItem);
+        
+        // 复制全部内容菜单项
+        JMenuItem copyAllItem = new JMenuItem("复制全部代码");
+        copyAllItem.addActionListener(evt -> {
+            copyToClipboard(content);
+        });
+        popup.add(copyAllItem);
+        
+        // 显示菜单
+        popup.show(editor.getComponent(), e.getX(), e.getY());
     }
     
     private void addBatchGenerateButton() {

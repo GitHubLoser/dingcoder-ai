@@ -39,12 +39,17 @@ import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableCellRenderer;
 import javax.swing.table.TableColumn;
 import javax.swing.table.TableCellEditor;
+import javax.swing.AbstractCellEditor;
 import java.awt.*;
 import javax.swing.ToolTipManager;
 import java.awt.event.ActionEvent;
+import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.Toolkit;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.StringSelection;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.file.Paths;
@@ -348,33 +353,44 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         resultTable = new JTable(resultTableModel) {
             @Override
             public boolean isCellEditable(int row, int column) {
-                return column == 2; // 只有反馈按钮可编辑
+                return column == 2; // 只有反馈按钮列可编辑
             }
             
-            // 禁用表格选择事件
+            // 启用表格选择功能
             @Override
             public boolean isRowSelected(int row) {
-                return false; // 禁用行选择
+                return super.isRowSelected(row);
             }
             
             @Override
             public boolean isColumnSelected(int column) {
-                return false; // 禁用列选择
+                return super.isColumnSelected(column);
             }
             
             @Override
             public boolean isCellSelected(int row, int column) {
-                return false; // 禁用单元格选择
+                return super.isCellSelected(row, column);
             }
         };
-        resultTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        // 支持单元格选择和多选
+        resultTable.setCellSelectionEnabled(true);
+        resultTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         resultTable.setGridColor(BORDER_COLOR);
         resultTable.setShowVerticalLines(true);
         resultTable.setShowHorizontalLines(true);
         
-        // 禁用表格的鼠标事件，只保留按钮事件
-        resultTable.setFocusable(false);
-        resultTable.setRequestFocusEnabled(false);
+        // 启用表格的选择和复制功能
+        resultTable.setFocusable(true);
+        resultTable.setRequestFocusEnabled(true);
+        
+        // 添加键盘快捷键支持复制
+        resultTable.getInputMap().put(KeyStroke.getKeyStroke(KeyEvent.VK_C, Toolkit.getDefaultToolkit().getMenuShortcutKeyMask()), "copy");
+        resultTable.getActionMap().put("copy", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                copySelectedTableContent();
+            }
+        });
         
         // 设置默认行高
         resultTable.setRowHeight(80);
@@ -394,7 +410,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         feedbackColumn.setMinWidth(100);
         feedbackColumn.setMaxWidth(100);
         
-        // 设置多行渲染器
+        // 设置多行渲染器（只读但可选择）
         resultTable.getColumnModel().getColumn(0).setCellRenderer(new MultiLineTableCellRenderer());
         resultTable.getColumnModel().getColumn(1).setCellRenderer(new MultiLineTableCellRenderer());
         
@@ -407,24 +423,39 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         ToolTipManager.sharedInstance().setDismissDelay(5000);
         ToolTipManager.sharedInstance().setReshowDelay(0);
         
-        // 禁用表格的鼠标事件监听器，只保留按钮事件
+        // 智能处理表格的鼠标事件，只在反馈按钮列阻止事件
         resultTable.addMouseListener(new MouseAdapter() {
             @Override
             public void mousePressed(MouseEvent e) {
-                // 阻止表格的鼠标事件，只让按钮处理
-                e.consume();
+                int row = resultTable.rowAtPoint(e.getPoint());
+                int col = resultTable.columnAtPoint(e.getPoint());
+                
+                // 只在反馈按钮列（第3列，索引为2）阻止事件
+                if (row >= 0 && col == 2) {
+                    e.consume();
+                }
             }
             
             @Override
             public void mouseReleased(MouseEvent e) {
-                // 阻止表格的鼠标事件，只让按钮处理
-                e.consume();
+                int row = resultTable.rowAtPoint(e.getPoint());
+                int col = resultTable.columnAtPoint(e.getPoint());
+                
+                // 只在反馈按钮列阻止事件
+                if (row >= 0 && col == 2) {
+                    e.consume();
+                }
             }
             
             @Override
             public void mouseClicked(MouseEvent e) {
-                // 阻止表格的鼠标事件，只让按钮处理
-                e.consume();
+                int row = resultTable.rowAtPoint(e.getPoint());
+                int col = resultTable.columnAtPoint(e.getPoint());
+                
+                // 只在反馈按钮列阻止事件
+                if (row >= 0 && col == 2) {
+                    e.consume();
+                }
             }
         });
         
@@ -1889,6 +1920,49 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         }
     }
     
+    // 多行文本单元格编辑器 - 支持文本选择和复制
+    private static class MultiLineTableCellEditor extends AbstractCellEditor implements TableCellEditor {
+        private JTextArea textArea;
+        
+        public MultiLineTableCellEditor() {
+            textArea = new JTextArea();
+            textArea.setLineWrap(true);
+            textArea.setWrapStyleWord(true);
+            textArea.setBorder(JBUI.Borders.empty(5));
+            textArea.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
+            
+            // 添加键盘快捷键支持复制
+            textArea.getInputMap().put(KeyStroke.getKeyStroke(KeyEvent.VK_C, Toolkit.getDefaultToolkit().getMenuShortcutKeyMask()), "copy");
+            textArea.getActionMap().put("copy", new AbstractAction() {
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    String selectedText = textArea.getSelectedText();
+                    if (selectedText != null && !selectedText.isEmpty()) {
+                        try {
+                            StringSelection selection = new StringSelection(selectedText);
+                            Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+                            clipboard.setContents(selection, selection);
+                        } catch (Exception ex) {
+                            // 忽略复制错误
+                        }
+                    }
+                }
+            });
+        }
+        
+        @Override
+        public Component getTableCellEditorComponent(JTable table, Object value, boolean isSelected, int row, int column) {
+            textArea.setText(value != null ? value.toString() : "");
+            textArea.selectAll(); // 选中全部文本
+            return textArea;
+        }
+        
+        @Override
+        public Object getCellEditorValue() {
+            return textArea.getText();
+        }
+    }
+    
     /**
      * 自动调整行高
      */
@@ -1905,7 +1979,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         }
     }
 
-    // 多行自动换行渲染器
+    // 多行自动换行渲染器 - 支持文本选择和复制，但只读
     private static class MultiLineTableCellRenderer extends JTextArea implements TableCellRenderer {
         public MultiLineTableCellRenderer() {
             setLineWrap(true);
@@ -1913,6 +1987,30 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             setOpaque(true);
             setBorder(JBUI.Borders.empty(5));
             setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
+            setEditable(false); // 设置为只读，但可以选择文本
+            setFocusable(true); // 支持焦点
+            setHighlighter(null); // 移除默认高亮器，避免选择时的高亮效果
+            
+            // 添加鼠标监听器支持文本选择
+            addMouseListener(new MouseAdapter() {
+                @Override
+                public void mousePressed(MouseEvent e) {
+                    requestFocusInWindow();
+                }
+            });
+            
+            // 添加键盘监听器，只允许复制操作
+            addKeyListener(new KeyAdapter() {
+                @Override
+                public void keyPressed(KeyEvent e) {
+                    // 只允许Ctrl+C复制操作
+                    if (e.isControlDown() && e.getKeyCode() == KeyEvent.VK_C) {
+                        copy();
+                    } else {
+                        e.consume(); // 阻止其他键盘操作
+                    }
+                }
+            });
         }
 
         @Override
@@ -2089,6 +2187,33 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         
         // 调用反馈接口，状态为"3"（误报），描述为用户输入的原因
         submitFeedback(mqttData, "3", reason, row);
+    }
+    
+    /**
+     * 复制选中的表格内容到剪贴板
+     */
+    private void copySelectedTableContent() {
+        int[] selectedRows = resultTable.getSelectedRows();
+        int[] selectedCols = resultTable.getSelectedColumns();
+        if (selectedRows.length > 0 && selectedCols.length > 0) {
+            StringBuilder sb = new StringBuilder();
+            for (int row : selectedRows) {
+                for (int col : selectedCols) {
+                    Object value = resultTable.getValueAt(row, col);
+                    sb.append(value == null ? "" : value.toString());
+                    if (col != selectedCols[selectedCols.length - 1]) sb.append("\t");
+                }
+                sb.append("\n");
+            }
+            try {
+                StringSelection selection = new StringSelection(sb.toString());
+                Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+                clipboard.setContents(selection, selection);
+                LOG.info("已复制表格内容到剪贴板");
+            } catch (Exception e) {
+                LOG.error("复制到剪贴板失败", e);
+            }
+        }
     }
     
     /**
