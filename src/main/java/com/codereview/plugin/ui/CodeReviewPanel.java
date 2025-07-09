@@ -71,6 +71,8 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
+import java.awt.GridBagLayout;
+import java.awt.GridBagConstraints;
 
 /**
  * 代码审查面板，包含评审文件、评审变更、评审结果三个区域
@@ -180,8 +182,8 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             // 文件区域：最小120px，最大200px，占总高度的15%
             int fileAreaHeight = Math.max(120, Math.min(200, (int)(totalHeight * 0.15)));
             
-            // 变更区域：固定50px（更紧凑的高度）
-            int changesAreaHeight = 50;
+            // 变更区域：固定60px，确保按钮和边距完全显示
+            int changesAreaHeight = 60;
             
             // 设置分割位置
             topSplitPane.setDividerLocation(fileAreaHeight);
@@ -303,33 +305,24 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
     }
     
     private JPanel createChangesPanel() {
-        JPanel panel = new JBPanel<>(new BorderLayout());
+        // 使用GridBagLayout来精确定位按钮，更稳定
+        JPanel panel = new JBPanel<>(new GridBagLayout());
         panel.setBackground(PANEL_BACKGROUND);
         
-        // 创建带标题的边框，并添加上下间距
+        // 创建带标题的边框
         TitledBorder border = BorderFactory.createTitledBorder(
             BorderFactory.createLineBorder(BORDER_COLOR),
             "评审变更"
         );
         border.setTitleFont(new Font(Font.SANS_SERIF, Font.BOLD, 14));
-        panel.setBorder(BorderFactory.createCompoundBorder(
-            JBUI.Borders.empty(5, 0, 5, 0), // 上下各5px间距
-            border
-        ));
+        panel.setBorder(border);
         
         // 创建一个隐藏的文本区域用于存储git diff结果（不显示给用户）
         changesArea = new JTextArea();
         changesArea.setVisible(false);
         
-        // 按钮区域 - 居中显示
-        JPanel buttonPanel = new JBPanel<>(new FlowLayout(FlowLayout.CENTER, 10, 5)); // 居中对齐，水平间距10px，垂直间距5px
-        buttonPanel.setOpaque(false);
-        buttonPanel.setPreferredSize(new Dimension(200, 50));
-        buttonPanel.setMinimumSize(new Dimension(150, 50));
-        buttonPanel.setBorder(BorderFactory.createEmptyBorder(5, 0, 5, 0));
-
         reviewChangesButton = new JButton("评审变更");
-        reviewChangesButton.setPreferredSize(new Dimension(100, 30)); // 调整按钮大小
+        reviewChangesButton.setPreferredSize(new Dimension(100, 30)); // 按钮大小不变
         reviewChangesButton.setFont(reviewFileButton.getFont());
         reviewChangesButton.setBackground(reviewFileButton.getBackground());
         reviewChangesButton.setForeground(reviewFileButton.getForeground());
@@ -349,7 +342,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                         // 直接弹窗提示，不在结果区显示
                         JOptionPane.showMessageDialog(
                             this,
-                            "没有检测到Git变更，可能原因：\n- 当前没有未提交的更改\n- 当前目录不是Git仓库\n- 所有更改已经提交",
+                            "没有检测到Git变更，可能原因：\\n- 当前没有未提交的更改\\n- 当前目录不是Git仓库\\n- 所有更改已经提交",
                             "提示",
                             JOptionPane.INFORMATION_MESSAGE
                         );
@@ -365,9 +358,15 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                 }
             });
         });
-        buttonPanel.add(reviewChangesButton);
-        
-        panel.add(buttonPanel, BorderLayout.CENTER);
+
+        // 使用GridBagConstraints将按钮完美居中
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.weightx = 1.0;
+        gbc.weighty = 1.0;
+        gbc.anchor = GridBagConstraints.CENTER;
+        panel.add(reviewChangesButton, gbc);
         
         return panel;
     }
