@@ -298,8 +298,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         reviewChangesButton.setContentAreaFilled(reviewFileButton.isContentAreaFilled());
         reviewChangesButton.setOpaque(reviewFileButton.isOpaque());
         reviewChangesButton.addActionListener(e -> {
-            // 不显示任何消息，保持评审结果区域空白
-        LOG.info("正在获取Git变更并评审...");
+            LOG.info("正在获取Git变更并评审...");
             SwingUtilities.invokeLater(() -> {
                 try {
                     String gitDiff = executeGitDiff();
@@ -307,13 +306,21 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                         changesArea.setText(gitDiff);
                         onReviewChangesInner(gitDiff);
                     } else {
-                        showMessage("ℹ️ 没有发现Git变更\n\n可能的原因：\n" +
-                                "• 当前没有未提交的更改\n" +
-                                "• 当前目录不是Git仓库\n" +
-                                "• 所有更改已经提交");
+                        // 直接弹窗提示，不在结果区显示
+                        JOptionPane.showMessageDialog(
+                            this,
+                            "没有检测到Git变更，可能原因：\n- 当前没有未提交的更改\n- 当前目录不是Git仓库\n- 所有更改已经提交",
+                            "提示",
+                            JOptionPane.INFORMATION_MESSAGE
+                        );
                     }
                 } catch (Exception ex) {
-                    showMessage("❌ 获取Git变更失败：" + ex.getMessage());
+                    JOptionPane.showMessageDialog(
+                        this,
+                        "获取Git变更失败：" + ex.getMessage(),
+                        "错误",
+                        JOptionPane.ERROR_MESSAGE
+                    );
                     LOG.error("Failed to get git diff", ex);
                 }
             });
@@ -1023,13 +1030,10 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         if (fileListModel.size() > 0 && fileListModel.get(0).isPlaceholder()) {
             fileListModel.removeElementAt(0); // 移除提示项
         }
-        
         ReviewFileItem item = new ReviewFileItem(fileName, filePath, startLine, endLine, false);
         fileListModel.addElement(item);
-        
-        // 更新结果区域
-        showMessage("✅ 已添加: " + fileName + 
-                          (startLine > 0 ? " (行 " + startLine + "-" + endLine + ")" : ""));
+        // 不再自动在评审结果区域显示内容
+        // showMessage("✅ 已添加: " + fileName + (startLine > 0 ? " (行 " + startLine + "-" + endLine + ")" : ""));
     }
     
     /**
