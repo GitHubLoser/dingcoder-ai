@@ -1538,7 +1538,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             falsePositiveButton.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
             falsePositiveButton.setContentAreaFilled(true);
             falsePositiveButton.setBackground(new Color(255, 152, 0)); // Material Design Orange
-            falsePositiveButton.setEnabled(mqttReceived);
+            falsePositiveButton.setEnabled(true); // 误报按钮始终启用
             falsePositiveButton.setForeground(Color.WHITE);
             falsePositiveButton.setOpaque(true);
             falsePositiveButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
@@ -1548,24 +1548,23 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             falsePositiveButton.addMouseListener(new java.awt.event.MouseAdapter() {
                 @Override
                 public void mouseEntered(java.awt.event.MouseEvent e) {
-                    if (mqttReceived) {
-                        falsePositiveButton.setBackground(new Color(245, 124, 0));
-                    }
+                    // 误报按钮始终响应悬停效果
+                    falsePositiveButton.setBackground(new Color(245, 124, 0));
                 }
                 @Override
                 public void mouseExited(java.awt.event.MouseEvent e) {
-                    if (mqttReceived) {
-                        falsePositiveButton.setBackground(new Color(255, 152, 0));
-                    }
+                    // 误报按钮始终响应悬停效果
+                    falsePositiveButton.setBackground(new Color(255, 152, 0));
                 }
             });
             
-            // 禁用状态样式
+            // 只有确认按钮在MQTT消息接收前禁用，误报按钮始终可用
             if (!mqttReceived) {
                 confirmButton.setBackground(new Color(189, 189, 189));
                 confirmButton.setForeground(new Color(117, 117, 117));
-                falsePositiveButton.setBackground(new Color(189, 189, 189));
-                falsePositiveButton.setForeground(new Color(117, 117, 117));
+                // 误报按钮保持启用状态的样式
+                falsePositiveButton.setBackground(new Color(255, 152, 0));
+                falsePositiveButton.setForeground(Color.WHITE);
             }
             
             // 使用GridBagConstraints将按钮添加到容器中，实现完美居中
@@ -1640,7 +1639,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             falsePositiveButton.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
             falsePositiveButton.setContentAreaFilled(true);
             falsePositiveButton.setBackground(new Color(255, 152, 0)); // Material Design Orange
-            falsePositiveButton.setEnabled(mqttReceived);
+            falsePositiveButton.setEnabled(true); // 误报按钮始终启用
             falsePositiveButton.setForeground(Color.WHITE);
             falsePositiveButton.setOpaque(true);
             falsePositiveButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
@@ -1650,24 +1649,23 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             falsePositiveButton.addMouseListener(new java.awt.event.MouseAdapter() {
                 @Override
                 public void mouseEntered(java.awt.event.MouseEvent e) {
-                    if (mqttReceived) {
-                        falsePositiveButton.setBackground(new Color(245, 124, 0));
-                    }
+                    // 误报按钮始终响应悬停效果
+                    falsePositiveButton.setBackground(new Color(245, 124, 0));
                 }
                 @Override
                 public void mouseExited(java.awt.event.MouseEvent e) {
-                    if (mqttReceived) {
-                        falsePositiveButton.setBackground(new Color(255, 152, 0));
-                    }
+                    // 误报按钮始终响应悬停效果
+                    falsePositiveButton.setBackground(new Color(255, 152, 0));
                 }
             });
             
-            // 禁用状态样式
+            // 只有确认按钮在MQTT消息接收前禁用，误报按钮始终可用
             if (!mqttReceived) {
                 confirmButton.setBackground(new Color(189, 189, 189));
                 confirmButton.setForeground(new Color(117, 117, 117));
-                falsePositiveButton.setBackground(new Color(189, 189, 189));
-                falsePositiveButton.setForeground(new Color(117, 117, 117));
+                // 误报按钮保持启用状态的样式
+                falsePositiveButton.setBackground(new Color(255, 152, 0));
+                falsePositiveButton.setForeground(Color.WHITE);
             }
             
             confirmButton.addActionListener(e -> {
@@ -1675,6 +1673,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                 fireEditingStopped();
             });
             falsePositiveButton.addActionListener(e -> {
+                LOG.info("❎按钮被点击，行号: " + editingRow);
                 showFalsePositiveDialog(editingRow);
                 fireEditingStopped();
             });
@@ -1814,37 +1813,101 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
      * 误报弹窗，支持多行输入
      */
     private void showFalsePositiveDialog(int row) {
-        JTextArea textArea = new JTextArea(5, 32);
+        LOG.info("开始显示误报对话框，行号: " + row);
+        // 创建文本框
+        JTextArea textArea = new JTextArea(8, 40);
         textArea.setLineWrap(true);
         textArea.setWrapStyleWord(true);
+        textArea.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
+        textArea.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(new Color(200, 200, 200)),
+            BorderFactory.createEmptyBorder(8, 8, 8, 8)
+        ));
+        
+        // 创建滚动面板
         JScrollPane scrollPane = new JScrollPane(textArea);
-        scrollPane.setPreferredSize(new Dimension(350, 120));
+        scrollPane.setPreferredSize(new Dimension(400, 150));
+        scrollPane.setBorder(BorderFactory.createEmptyBorder());
 
-        JPanel panel = new JPanel(new BorderLayout(0, 10));
-        panel.add(new JLabel("请填写误报原因："), BorderLayout.NORTH);
-        panel.add(scrollPane, BorderLayout.CENTER);
+        // 创建主面板
+        JPanel mainPanel = new JPanel(new BorderLayout(15, 0));
+        mainPanel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        
+        // 添加标题标签
+        JLabel titleLabel = new JLabel("请填写误报原因：");
+        titleLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 14));
+        titleLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 10, 0));
+        mainPanel.add(titleLabel, BorderLayout.NORTH);
+        
+        // 添加文本框
+        mainPanel.add(scrollPane, BorderLayout.CENTER);
 
-        // 自定义按钮文本
-        String[] options = {"确定", "取消"};
-        int result = JOptionPane.showOptionDialog(
-            SwingUtilities.getWindowAncestor(resultTable),
-            panel,
-            "误报反馈",
-            JOptionPane.OK_CANCEL_OPTION,
-            JOptionPane.QUESTION_MESSAGE,
-            null,
-            options,
-            options[0]
-        );
-        if (result == 0) { // 确定
+        // 创建按钮面板
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 0));
+        buttonPanel.setBorder(BorderFactory.createEmptyBorder(15, 0, 0, 0));
+        
+        // 创建确定按钮
+        JButton confirmButton = new JButton("确定");
+        confirmButton.setPreferredSize(new Dimension(80, 32));
+        confirmButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
+        confirmButton.setBackground(new Color(33, 150, 243));
+        confirmButton.setForeground(Color.WHITE);
+        confirmButton.setFocusPainted(false);
+        confirmButton.setBorderPainted(false);
+        
+        // 创建取消按钮
+        JButton cancelButton = new JButton("取消");
+        cancelButton.setPreferredSize(new Dimension(80, 32));
+        cancelButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
+        cancelButton.setBackground(new Color(158, 158, 158));
+        cancelButton.setForeground(Color.WHITE);
+        cancelButton.setFocusPainted(false);
+        cancelButton.setBorderPainted(false);
+        
+        // 添加按钮到面板
+        buttonPanel.add(confirmButton);
+        buttonPanel.add(cancelButton);
+        mainPanel.add(buttonPanel, BorderLayout.SOUTH);
+
+        // 创建对话框
+        JDialog dialog = new JDialog(SwingUtilities.getWindowAncestor(resultTable), "误报反馈", Dialog.ModalityType.APPLICATION_MODAL);
+        dialog.setContentPane(mainPanel);
+        dialog.setResizable(false);
+        dialog.setLocationRelativeTo(SwingUtilities.getWindowAncestor(resultTable));
+        
+        // 设置按钮事件
+        confirmButton.addActionListener(e -> {
             String reason = textArea.getText().trim();
             if (reason.isEmpty()) {
-                JOptionPane.showMessageDialog(panel, "请填写误报原因！", "提示", JOptionPane.WARNING_MESSAGE);
+                JOptionPane.showMessageDialog(dialog, "请填写误报原因！", "提示", JOptionPane.WARNING_MESSAGE);
                 return;
             }
             onFalsePositiveSubmit(row, reason);
-        }
-        // 取消则不处理
+            dialog.dispose();
+        });
+        
+        cancelButton.addActionListener(e -> dialog.dispose());
+        
+        // 设置回车键确认
+        textArea.getInputMap().put(KeyStroke.getKeyStroke("ENTER"), "confirm");
+        textArea.getActionMap().put("confirm", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                confirmButton.doClick();
+            }
+        });
+        
+        // 设置ESC键取消
+        dialog.getRootPane().registerKeyboardAction(
+            e -> dialog.dispose(),
+            "cancel",
+            KeyStroke.getKeyStroke("ESCAPE"),
+            JComponent.WHEN_IN_FOCUSED_WINDOW
+        );
+        
+        // 显示对话框
+        dialog.pack();
+        dialog.setVisible(true);
     }
 
     // 误报提交处理（可自定义逻辑）
@@ -1852,7 +1915,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         String filePath = (String) resultTableModel.getValueAt(row, 0);
         String review = (String) resultTableModel.getValueAt(row, 1);
         LOG.info("用户误报反馈: " + filePath + ", 原因: " + reason);
-        showMessage("⚠️ 已标记为误报: " + filePath + "\n原因: " + reason);
+        // 不显示任何消息，保持评审结果区域空白
         // TODO: 可在此处调用API或其他逻辑
     }
 } 
