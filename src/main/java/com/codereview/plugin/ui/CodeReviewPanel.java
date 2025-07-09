@@ -339,10 +339,10 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                         changesArea.setText(gitDiff);
                         onReviewChangesInner(gitDiff);
                     } else {
-                        // 直接弹窗提示，不在结果区显示
+                        // 使用HTML格式化消息，确保换行符正确显示
                         JOptionPane.showMessageDialog(
                             this,
-                            "没有检测到Git变更，可能原因：\\n- 当前没有未提交的更改\\n- 当前目录不是Git仓库\\n- 所有更改已经提交",
+                            "<html><body>没有检测到Git变更，可能原因：<br>- 当前没有未提交的更改<br>- 当前目录不是Git仓库<br>- 所有更改已经提交</body></html>",
                             "提示",
                             JOptionPane.INFORMATION_MESSAGE
                         );
