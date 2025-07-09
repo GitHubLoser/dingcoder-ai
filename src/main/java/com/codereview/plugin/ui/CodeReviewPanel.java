@@ -1,6 +1,7 @@
 package com.codereview.plugin.ui;
 
 import com.codereview.plugin.service.ReviewService;
+import com.codereview.plugin.service.ReviewFeedbackService;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.SelectionModel;
@@ -39,6 +40,7 @@ import javax.swing.table.TableCellRenderer;
 import javax.swing.table.TableColumn;
 import javax.swing.table.TableCellEditor;
 import java.awt.*;
+import javax.swing.ToolTipManager;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
@@ -71,6 +73,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
     
     private final Project project;
     private final ReviewService reviewService;
+    private final ReviewFeedbackService feedbackService;
     
     // UI组件
     private JList<ReviewFileItem> fileList;
@@ -85,6 +88,9 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
     private JButton resetButton;
     private boolean mqttReceived = false; // 新增，是否收到MQTT消息
     
+    // MQTT消息字段存储 - 用于反馈接口
+    private java.util.Map<Integer, MqttMessageData> mqttDataMap = new java.util.HashMap<>();
+    
     // 静态引用，供外部访问
     private static CodeReviewPanel instance;
     
@@ -97,6 +103,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         super(new BorderLayout());
         this.project = project;
         this.reviewService = ReviewService.getInstance(project);
+        this.feedbackService = ReviewFeedbackService.getInstance();
         instance = this; // 设置静态引用
         
         initializeUI();
@@ -343,11 +350,31 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             public boolean isCellEditable(int row, int column) {
                 return column == 2; // 只有反馈按钮可编辑
             }
+            
+            // 禁用表格选择事件
+            @Override
+            public boolean isRowSelected(int row) {
+                return false; // 禁用行选择
+            }
+            
+            @Override
+            public boolean isColumnSelected(int column) {
+                return false; // 禁用列选择
+            }
+            
+            @Override
+            public boolean isCellSelected(int row, int column) {
+                return false; // 禁用单元格选择
+            }
         };
         resultTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         resultTable.setGridColor(BORDER_COLOR);
         resultTable.setShowVerticalLines(true);
         resultTable.setShowHorizontalLines(true);
+        
+        // 禁用表格的鼠标事件，只保留按钮事件
+        resultTable.setFocusable(false);
+        resultTable.setRequestFocusEnabled(false);
         
         // 设置默认行高
         resultTable.setRowHeight(80);
@@ -374,6 +401,68 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         // 设置反馈按钮渲染器和编辑器
         feedbackColumn.setCellRenderer(new FeedbackButtonRenderer());
         feedbackColumn.setCellEditor(new FeedbackButtonEditor());
+        
+        // 配置ToolTipManager以改善按钮tooltip显示
+        ToolTipManager.sharedInstance().setInitialDelay(0);
+        ToolTipManager.sharedInstance().setDismissDelay(5000);
+        ToolTipManager.sharedInstance().setReshowDelay(0);
+        
+        // 禁用表格的鼠标事件监听器，只保留按钮事件
+        resultTable.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+                // 阻止表格的鼠标事件，只让按钮处理
+                e.consume();
+            }
+            
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                // 阻止表格的鼠标事件，只让按钮处理
+                e.consume();
+            }
+            
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                // 阻止表格的鼠标事件，只让按钮处理
+                e.consume();
+            }
+        });
+        
+        // 添加表格的鼠标移动监听器，用于显示tooltip
+        resultTable.addMouseMotionListener(new MouseAdapter() {
+            @Override
+            public void mouseMoved(MouseEvent e) {
+                // 获取鼠标位置对应的单元格
+                int row = resultTable.rowAtPoint(e.getPoint());
+                int col = resultTable.columnAtPoint(e.getPoint());
+                
+                if (row >= 0 && col == 2) { // 只在反馈列显示tooltip
+                    // 获取按钮并显示tooltip
+                    Component component = resultTable.getCellRenderer(row, col)
+                        .getTableCellRendererComponent(resultTable, resultTable.getValueAt(row, col), false, false, row, col);
+                    
+                    if (component instanceof JPanel) {
+                        JPanel panel = (JPanel) component;
+                        // 查找按钮并显示tooltip
+                        for (Component comp : panel.getComponents()) {
+                            if (comp instanceof JPanel) {
+                                JPanel buttonPanel = (JPanel) comp;
+                                for (Component btn : buttonPanel.getComponents()) {
+                                    if (btn instanceof JButton) {
+                                        JButton button = (JButton) btn;
+                                        if (button.getToolTipText() != null) {
+                                            // 显示tooltip
+                                            ToolTipManager.sharedInstance().mouseMoved(e);
+                                            return;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
         
         JBScrollPane scrollPane = new JBScrollPane(resultTable);
         scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
@@ -1385,6 +1474,23 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         String filePath = "";
         String reviewResult = "";
         
+        // 创建MQTT消息数据对象
+        MqttMessageData mqttData = new MqttMessageData();
+        
+        // 提取反馈接口需要的字段
+        if (jsonObject.has("code_submt_recd_no")) {
+            mqttData.codeSubmtRecdNo = jsonObject.get("code_submt_recd_no").getAsString();
+        }
+        if (jsonObject.has("code_file_no")) {
+            mqttData.codeFileNo = jsonObject.get("code_file_no").getAsString();
+        }
+        if (jsonObject.has("code_slice_no")) {
+            mqttData.codeSliceNo = jsonObject.get("code_slice_no").getAsString();
+        }
+        if (jsonObject.has("seq")) {
+            mqttData.seq = jsonObject.get("seq").getAsInt();
+        }
+        
         // 提取code_file_desc字段
         if (jsonObject.has("code_file_desc")) {
             filePath = jsonObject.get("code_file_desc").getAsString();
@@ -1409,19 +1515,33 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         
         // 如果都有值，添加到表格
         if (!filePath.isEmpty() && !reviewResult.isEmpty()) {
+            int rowIndex = resultTableModel.getRowCount();
             resultTableModel.addRow(new Object[]{
                 filePath,
                 reviewResult,
                 new FeedbackButtons()
             });
+            
+            // 存储MQTT数据，与表格行索引关联
+            if (mqttData.hasValidData()) {
+                mqttDataMap.put(rowIndex, mqttData);
+                LOG.info("存储MQTT数据到行 " + rowIndex + ": " + mqttData);
+            }
         } else if (!reviewResult.isEmpty()) {
             // 只有评审结果，使用默认文件路径
             String defaultPath = isAppendMode ? "MQTT消息" : "评审结果";
+            int rowIndex = resultTableModel.getRowCount();
             resultTableModel.addRow(new Object[]{
                 defaultPath,
                 reviewResult,
                 new FeedbackButtons()
             });
+            
+            // 即使是默认路径，也存储MQTT数据
+            if (mqttData.hasValidData()) {
+                mqttDataMap.put(rowIndex, mqttData);
+                LOG.info("存储MQTT数据到行 " + rowIndex + ": " + mqttData);
+            }
         }
         
         adjustRowHeights();
@@ -1473,6 +1593,28 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         adjustRowHeights();
     }
     
+    /**
+     * MQTT消息数据类
+     */
+    private static class MqttMessageData {
+        String codeSubmtRecdNo;
+        String codeFileNo;
+        String codeSliceNo;
+        int seq;
+
+        boolean hasValidData() {
+            return codeSubmtRecdNo != null && !codeSubmtRecdNo.isEmpty() &&
+                   codeFileNo != null && !codeFileNo.isEmpty() &&
+                   codeSliceNo != null && !codeSliceNo.isEmpty();
+        }
+
+        @Override
+        public String toString() {
+            return String.format("MqttMessageData{codeSubmtRecdNo='%s', codeFileNo='%s', codeSliceNo='%s', seq=%d}",
+                    codeSubmtRecdNo, codeFileNo, codeSliceNo, seq);
+        }
+    }
+
     /**
      * 反馈按钮容器类
      */
@@ -1614,19 +1756,28 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             confirmButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             confirmButton.setToolTipText("确认评审意见");
             
-            // 悬停效果
+            // 悬停效果和强制tooltip显示
             confirmButton.addMouseListener(new java.awt.event.MouseAdapter() {
                 @Override
                 public void mouseEntered(java.awt.event.MouseEvent e) {
                     if (mqttReceived) {
                         confirmButton.setBackground(new Color(67, 160, 71));
                     }
+                    // 强制显示tooltip
+                    ToolTipManager.sharedInstance().setInitialDelay(0);
+                    ToolTipManager.sharedInstance().setDismissDelay(5000);
+                    ToolTipManager.sharedInstance().mouseMoved(e);
                 }
                 @Override
                 public void mouseExited(java.awt.event.MouseEvent e) {
                     if (mqttReceived) {
                         confirmButton.setBackground(new Color(76, 175, 80));
                     }
+                }
+                @Override
+                public void mouseMoved(java.awt.event.MouseEvent e) {
+                    // 确保tooltip保持显示
+                    ToolTipManager.sharedInstance().mouseMoved(e);
                 }
             });
 
@@ -1645,17 +1796,26 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             falsePositiveButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             falsePositiveButton.setToolTipText("标记为误报");
             
-            // 悬停效果
+            // 悬停效果和强制tooltip显示
             falsePositiveButton.addMouseListener(new java.awt.event.MouseAdapter() {
                 @Override
                 public void mouseEntered(java.awt.event.MouseEvent e) {
                     // 误报按钮始终响应悬停效果
                     falsePositiveButton.setBackground(new Color(245, 124, 0));
+                    // 强制显示tooltip
+                    ToolTipManager.sharedInstance().setInitialDelay(0);
+                    ToolTipManager.sharedInstance().setDismissDelay(5000);
+                    ToolTipManager.sharedInstance().mouseMoved(e);
                 }
                 @Override
                 public void mouseExited(java.awt.event.MouseEvent e) {
                     // 误报按钮始终响应悬停效果
                     falsePositiveButton.setBackground(new Color(255, 152, 0));
+                }
+                @Override
+                public void mouseMoved(java.awt.event.MouseEvent e) {
+                    // 确保tooltip保持显示
+                    ToolTipManager.sharedInstance().mouseMoved(e);
                 }
             });
             
@@ -1709,18 +1869,22 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             String filePath = (String) resultTableModel.getValueAt(row, 0);
             String review = (String) resultTableModel.getValueAt(row, 1);
             
-            LOG.info("用户反馈: " + feedback + ", 文件: " + filePath);
+            LOG.info("用户反馈: " + feedback + ", 文件: " + filePath + ", 行号: " + row);
             
-            // 可以在这里调用API提交反馈
-            // TODO: 实现反馈提交逻辑
+            // 获取MQTT消息数据
+            MqttMessageData mqttData = mqttDataMap.get(row);
+            if (mqttData == null || !mqttData.hasValidData()) {
+                LOG.warn("行 " + row + " 没有有效的MQTT数据，无法提交反馈");
+                return;
+            }
             
-            // 更新按钮状态或样式
             if ("confirmed".equals(feedback)) {
-                // 不显示任何消息，保持评审结果区域空白
-        LOG.info("已确认评审意见: " + filePath);
+                // 已确认 - 直接调用反馈接口
+                submitFeedback(mqttData, "2", "", row);
+                LOG.info("已确认评审意见: " + filePath);
             } else if ("false_positive".equals(feedback)) {
-                // 不显示任何消息，保持评审结果区域空白
-                LOG.info("已标记为误报: " + filePath);
+                // 误报 - 显示输入框让用户填写原因
+                showFalsePositiveDialog(row);
             }
         }
     }
@@ -1802,6 +1966,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             
             // 重置MQTT状态
             mqttReceived = false; // 重置时禁用反馈按钮
+            mqttDataMap.clear(); // 清空MQTT数据映射
             updateFeedbackButtonsState(); // 更新按钮状态
             
             // 不显示任何消息，保持评审结果区域完全空白
@@ -1910,12 +2075,46 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         dialog.setVisible(true);
     }
 
-    // 误报提交处理（可自定义逻辑）
+    // 误报提交处理
     private void onFalsePositiveSubmit(int row, String reason) {
         String filePath = (String) resultTableModel.getValueAt(row, 0);
-        String review = (String) resultTableModel.getValueAt(row, 1);
         LOG.info("用户误报反馈: " + filePath + ", 原因: " + reason);
-        // 不显示任何消息，保持评审结果区域空白
-        // TODO: 可在此处调用API或其他逻辑
+        
+        // 获取MQTT消息数据
+        MqttMessageData mqttData = mqttDataMap.get(row);
+        if (mqttData == null || !mqttData.hasValidData()) {
+            LOG.warn("行 " + row + " 没有有效的MQTT数据，无法提交误报反馈");
+            return;
+        }
+        
+        // 调用反馈接口，状态为"3"（误报），描述为用户输入的原因
+        submitFeedback(mqttData, "3", reason, row);
+    }
+    
+    /**
+     * 提交反馈到服务器
+     */
+    private void submitFeedback(MqttMessageData mqttData, String feedbackStatus, String description, int row) {
+        LOG.info("提交反馈: 状态=" + feedbackStatus + ", 描述=" + description + ", MQTT数据=" + mqttData);
+        
+        feedbackService.submitFeedback(
+            mqttData.codeSubmtRecdNo,
+            mqttData.codeFileNo, 
+            mqttData.codeSliceNo,
+            mqttData.seq,
+            feedbackStatus,
+            description,
+            success -> {
+                SwingUtilities.invokeLater(() -> {
+                    if (success) {
+                        LOG.info("反馈提交成功，行号: " + row);
+                        // 可以在这里更新UI状态，比如禁用按钮或显示已提交状态
+                    } else {
+                        LOG.error("反馈提交失败，行号: " + row);
+                        // 可以在这里显示错误消息
+                    }
+                });
+            }
+        );
     }
 } 
