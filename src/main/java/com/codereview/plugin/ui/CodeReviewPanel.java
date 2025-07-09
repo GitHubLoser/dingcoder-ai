@@ -1464,8 +1464,8 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             panel.setOpaque(true);
             panel.setBackground(isSelected ? table.getSelectionBackground() : table.getBackground());
             
-            // 创建按钮容器面板，使用FlowLayout居中
-            JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 6, 0));
+            // 创建按钮容器面板，使用GridBagLayout实现完美居中
+            JPanel buttonPanel = new JPanel(new GridBagLayout());
             buttonPanel.setOpaque(false);
             
             // 已确认按钮 - 绿色主题
@@ -1538,8 +1538,17 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                 falsePositiveButton.setForeground(new Color(117, 117, 117));
             }
             
-            buttonPanel.add(confirmButton);
-            buttonPanel.add(falsePositiveButton);
+            // 使用GridBagConstraints将按钮添加到容器中，实现完美居中
+            GridBagConstraints gbc = new GridBagConstraints();
+            gbc.gridx = 0;
+            gbc.gridy = 0;
+            gbc.insets = new Insets(0, 3, 0, 3); // 左右间距
+            buttonPanel.add(confirmButton, gbc);
+            
+            gbc.gridx = 1;
+            gbc.insets = new Insets(0, 3, 0, 3); // 左右间距
+            buttonPanel.add(falsePositiveButton, gbc);
+            
             panel.add(buttonPanel, BorderLayout.CENTER);
             return panel;
         }
@@ -1557,8 +1566,8 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         public FeedbackButtonEditor() {
             panel = new JPanel(new BorderLayout());
             
-            // 创建按钮容器面板，使用FlowLayout居中
-            JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 6, 0));
+            // 创建按钮容器面板，使用GridBagLayout实现完美居中
+            JPanel buttonPanel = new JPanel(new GridBagLayout());
             buttonPanel.setOpaque(false);
             
             // 已确认按钮 - 绿色主题
@@ -1639,8 +1648,18 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                 showFalsePositiveDialog(editingRow);
                 fireEditingStopped();
             });
-            buttonPanel.add(confirmButton);
-            buttonPanel.add(falsePositiveButton);
+            
+            // 使用GridBagConstraints将按钮添加到容器中，实现完美居中
+            GridBagConstraints gbc = new GridBagConstraints();
+            gbc.gridx = 0;
+            gbc.gridy = 0;
+            gbc.insets = new Insets(0, 3, 0, 3); // 左右间距
+            buttonPanel.add(confirmButton, gbc);
+            
+            gbc.gridx = 1;
+            gbc.insets = new Insets(0, 3, 0, 3); // 左右间距
+            buttonPanel.add(falsePositiveButton, gbc);
+            
             panel.add(buttonPanel, BorderLayout.CENTER);
         }
         
