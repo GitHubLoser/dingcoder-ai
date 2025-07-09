@@ -712,11 +712,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             // 不显示任何消息，保持评审结果区域空白
             
             // 调用新的评审服务
-            reviewService.reviewFiles(reviewItems, result -> {
-                SwingUtilities.invokeLater(() -> {
-                    parseAndDisplayResult(result);
-                });
-            });
+            reviewService.reviewFiles(reviewItems, null);
             
         } catch (Exception ex) {
             LOG.error("准备评审文件时出错", ex);
@@ -840,44 +836,21 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         return null;
     }
     
-    private void onReviewChangesInner(String changes) {
+        private void onReviewChangesInner(String changes) {
         if (changes.isEmpty() || changes.startsWith("点击") || changes.startsWith("没有检测到") || changes.startsWith("获取Git变更时出错")) {
             // 只在日志中记录错误，不显示在评审结果区域
-        LOG.warn("没有可评审的变更");
+            LOG.warn("没有可评审的变更");
             return;
         }
         // 不显示任何消息，保持评审结果区域空白
         LOG.info("正在评审代码变更，准备变更内容...");
         try {
-            // 将Git变更作为特殊文件进行评审
-            List<ReviewService.ReviewFileItem> reviewItems = new ArrayList<>();
-            // 创建一个虚拟的"Git变更"文件项
-            String projectName = project.getName();
-            String changeFileName = projectName + "_git_changes.diff";
-            String changeFilePath = "git_diff/" + changeFileName;
-            reviewItems.add(new ReviewService.ReviewFileItem(
-                changeFileName,
-                changeFilePath,
-                changes
-            ));
-            LOG.info("准备评审Git变更，内容长度: " + changes.length() + " 字符");
-            // 不显示任何消息，保持评审结果区域空白
-            LOG.info("正在调用变更评审API，分析变更内容中...");
-            // 调用评审服务
-            reviewService.reviewFiles(reviewItems, result -> {
-                SwingUtilities.invokeLater(() -> {
-                    // 为变更评审结果添加特殊标记
-                    String enhancedResult = "# 🔄 Git变更代码审查\n\n" + 
-                                          "**审查类型：** 代码变更差异分析\n" +
-                                          "**变更范围：** " + countChangedFiles(changes) + " 个文件\n\n" + 
-                                          result;
-                    parseAndDisplayResult(enhancedResult);
-                });
-            });
+            // 调用评审变更服务
+            reviewService.reviewChanges(changes, null);
         } catch (Exception ex) {
             LOG.error("评审变更时出错", ex);
-                            // 只在日志中记录错误，不显示在评审结果区域
-                LOG.error("评审变更时出错：" + ex.getMessage());
+            // 只在日志中记录错误，不显示在评审结果区域
+            LOG.error("评审变更时出错：" + ex.getMessage());
         }
     }
     

@@ -115,24 +115,138 @@ public final class ReviewService {
             try {
                 callReviewAPI(fileItems);
                 LOG.info("代码审查请求已发送，不等待返回值");
-                // 可选：发送成功提示
-                if (callback != null) {
-                    callback.accept("✅ 代码审查请求已发送\n\n评审结果将通过MQTT消息返回。");
-                }
+                // 不调用callback，保持评审结果区域不变
             } catch (Exception e) {
                 LOG.error("代码审查API调用失败", e);
-                if (callback != null) {
-                    callback.accept("❌ API调用失败：" + e.getMessage() + "\n\n请检查网络连接或联系管理员。");
-                }
+                // 不调用callback，保持评审结果区域不变
             }
         }).start();
+    }
+    
+    /**
+     * 审查代码变更（不等待返回值）
+     * @param diffContent git diff 的输出内容
+     * @param callback 结果回调（可选）
+     */
+    public void reviewChanges(String diffContent, Consumer<String> callback) {
+        if (!authService.isLoggedIn()) {
+            if (callback != null) {
+                callback.accept("❌ 错误：用户未登录\n\n请先登录后再进行代码审查。");
+            }
+            return;
+        }
+        
+        if (diffContent == null || diffContent.trim().isEmpty()) {
+            if (callback != null) {
+                callback.accept("❌ 错误：没有可评审的变更\n\n请先添加文件到暂存区。");
+            }
+            return;
+        }
+        
+        LOG.info("开始代码变更审查，变更内容长度: " + diffContent.length());
+        
+        // 异步调用API，不等待返回值
+        new Thread(() -> {
+            try {
+                // 解析diff内容，提取变更的文件
+                List<ReviewFileItem> changedFiles = parseChangedFilesFromDiff(diffContent);
+                callReviewChangesAPI(diffContent, changedFiles);
+                LOG.info("代码变更审查请求已发送，不等待返回值");
+                // 不调用callback，保持评审结果区域不变
+            } catch (Exception e) {
+                LOG.error("代码变更审查API调用失败", e);
+                // 不调用callback，保持评审结果区域不变
+            }
+        }).start();
+    }
+    
+    /**
+     * 从diff内容中解析变更的文件
+     */
+    private List<ReviewFileItem> parseChangedFilesFromDiff(String diffContent) {
+        List<ReviewFileItem> changedFiles = new ArrayList<>();
+        String[] lines = diffContent.split("\n");
+        
+        String currentFile = null;
+        StringBuilder fileContent = new StringBuilder();
+        
+        for (String line : lines) {
+            if (line.startsWith("diff --git")) {
+                // 保存前一个文件
+                if (currentFile != null && fileContent.length() > 0) {
+                    String fileName = extractFileName(currentFile);
+                    try {
+                        String content = getFileContentFromProject(currentFile);
+                        if (content != null) {
+                            changedFiles.add(new ReviewFileItem(fileName, currentFile, content));
+                        }
+                    } catch (Exception e) {
+                        LOG.warn("无法获取文件内容: " + currentFile + ", 错误: " + e.getMessage());
+                    }
+                }
+                
+                // 开始新文件
+                String[] parts = line.split(" ");
+                if (parts.length >= 4) {
+                    currentFile = parts[2].substring(2); // 移除 "a/" 前缀
+                }
+                fileContent = new StringBuilder();
+            }
+        }
+        
+        // 处理最后一个文件
+        if (currentFile != null) {
+            String fileName = extractFileName(currentFile);
+            try {
+                String content = getFileContentFromProject(currentFile);
+                if (content != null) {
+                    changedFiles.add(new ReviewFileItem(fileName, currentFile, content));
+                }
+            } catch (Exception e) {
+                LOG.warn("无法获取文件内容: " + currentFile + ", 错误: " + e.getMessage());
+            }
+        }
+        
+        LOG.info("从diff中解析出 " + changedFiles.size() + " 个变更文件");
+        return changedFiles;
+    }
+    
+    /**
+     * 从文件路径中提取文件名
+     */
+    private String extractFileName(String filePath) {
+        if (filePath == null) return "";
+        int lastSlash = filePath.lastIndexOf('/');
+        return lastSlash >= 0 ? filePath.substring(lastSlash + 1) : filePath;
+    }
+    
+    /**
+     * 从项目中获取文件内容
+     */
+    private String getFileContentFromProject(String relativePath) {
+        try {
+            String basePath = project.getBasePath();
+            if (basePath == null) return null;
+            
+            VirtualFile file = project.getBaseDir().findFileByRelativePath(relativePath);
+            if (file == null || !file.exists()) {
+                LOG.warn("文件不存在: " + relativePath);
+                return null;
+            }
+            
+            return getFileContent(file);
+        } catch (Exception e) {
+            LOG.error("获取文件内容失败: " + relativePath, e);
+            return null;
+        }
     }
     
     /**
      * 调用代码审查API（不等待返回值）
      */
     private void callReviewAPI(List<ReviewFileItem> fileItems) {
-        LOG.info("准备调用代码审查API，URL: " + REVIEW_API_URL);
+        LOG.info("=== 开始调用代码审查API ===");
+        LOG.info("API URL: " + REVIEW_API_URL);
         
         try {
             RestTemplate restTemplate = new RestTemplate();
@@ -140,23 +254,26 @@ public final class ReviewService {
             // 设置请求头
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+            LOG.info("设置Content-Type: " + MediaType.MULTIPART_FORM_DATA);
             
             // 添加token
             String token = authService.getToken();
             if (token != null) {
                 headers.add("token", token);
-                LOG.info("已添加token到请求头");
+                LOG.info("已添加token到请求头: " + token.substring(0, Math.min(20, token.length())) + "...");
             } else {
                 LOG.warn("未获取到有效token");
             }
             
             // 构建multipart请求体
             MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            LOG.info("开始构建multipart请求体");
             
             // 添加文件
             for (int i = 0; i < fileItems.size(); i++) {
                 ReviewFileItem item = fileItems.get(i);
                 LOG.info("添加文件 " + (i + 1) + ": " + item.getFileName() + ", 大小: " + item.getContent().length() + " 字符");
+                LOG.info("文件路径: " + item.getFilePath());
                 
                 // 创建文件资源
                 ByteArrayResource fileResource = new ByteArrayResource(item.getContent().getBytes()) {
@@ -167,6 +284,7 @@ public final class ReviewService {
                 };
                 
                 body.add("files", fileResource);
+                LOG.info("已添加文件到body: " + item.getFileName());
             }
             
             // 构建fileInfo JSON数组
@@ -191,18 +309,35 @@ public final class ReviewService {
             body.add("fileInfo", fileInfoJson);
             
             LOG.info("fileInfo JSON: " + fileInfoJson);
+            LOG.info("请求体参数数量: " + body.size());
+            
+            // 构建请求体JSON日志
+            Map<String, Object> requestBodyLog = new HashMap<>();
+            requestBodyLog.put("fileCount", fileItems.size());
+            requestBodyLog.put("fileInfo", fileInfoList);
+            requestBodyLog.put("bodySize", body.size());
+            requestBodyLog.put("contentType", MediaType.MULTIPART_FORM_DATA.toString());
+            
+            String requestBodyJson = gson.toJson(requestBodyLog);
+            LOG.info("请求体JSON日志: " + requestBodyJson);
+            
             LOG.info("准备发送请求，包含 " + fileItems.size() + " 个文件");
             
             // 创建请求实体
             HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+            LOG.info("请求实体创建完成");
             
             // 发送请求
+            LOG.info("开始发送HTTP请求...");
             long startTime = System.currentTimeMillis();
             ResponseEntity<String> response = restTemplate.postForEntity(REVIEW_API_URL, requestEntity, String.class);
             long endTime = System.currentTimeMillis();
             
-            LOG.info("API调用完成，耗时: " + (endTime - startTime) + "ms");
+            LOG.info("=== API调用完成 ===");
+            LOG.info("请求耗时: " + (endTime - startTime) + "ms");
             LOG.info("响应状态码: " + response.getStatusCode());
+            LOG.info("响应头: " + response.getHeaders());
+            LOG.info("响应内容长度: " + (response.getBody() != null ? response.getBody().length() : 0));
             LOG.info("响应内容: " + response.getBody());
             
             if (response.getStatusCode() == HttpStatus.OK) {
@@ -213,7 +348,129 @@ public final class ReviewService {
             }
             
         } catch (Exception e) {
-            LOG.error("调用代码审查API时发生异常", e);
+            LOG.error("=== 调用代码审查API时发生异常 ===");
+            LOG.error("异常类型: " + e.getClass().getSimpleName());
+            LOG.error("异常消息: " + e.getMessage());
+            LOG.error("异常堆栈:", e);
+            throw new RuntimeException("API调用异常：" + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * 调用代码变更审查API（不等待返回值）
+     */
+    private void callReviewChangesAPI(String diffContent, List<ReviewFileItem> changedFiles) {
+        LOG.info("=== 开始调用代码变更审查API ===");
+        LOG.info("API URL: " + REVIEW_API_URL);
+        
+        try {
+            RestTemplate restTemplate = new RestTemplate();
+            
+            // 设置请求头
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+            LOG.info("设置Content-Type: " + MediaType.MULTIPART_FORM_DATA);
+            
+            // 添加token
+            String token = authService.getToken();
+            if (token != null) {
+                headers.add("token", token);
+                LOG.info("已添加token到请求头: " + token.substring(0, Math.min(20, token.length())) + "...");
+            } else {
+                LOG.warn("未获取到有效token");
+            }
+            
+            // 构建multipart请求体
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            LOG.info("开始构建multipart请求体");
+            
+            // 添加变更的文件 (files 参数)
+            for (int i = 0; i < changedFiles.size(); i++) {
+                ReviewFileItem item = changedFiles.get(i);
+                LOG.info("添加变更文件 " + (i + 1) + ": " + item.getFileName() + ", 大小: " + item.getContent().length() + " 字符");
+                LOG.info("文件路径: " + item.getFilePath());
+                
+                // 创建文件资源
+                ByteArrayResource fileResource = new ByteArrayResource(item.getContent().getBytes()) {
+                    @Override
+                    public String getFilename() {
+                        return item.getFileName();
+                    }
+                };
+                
+                body.add("files", fileResource);
+                LOG.info("已添加变更文件到body: " + item.getFileName());
+            }
+            
+            // 添加diffFile
+            ByteArrayResource diffFileResource = new ByteArrayResource(diffContent.getBytes()) {
+                @Override
+                public String getFilename() {
+                    return "git_changes.diff";
+                }
+            };
+            body.add("diffFile", diffFileResource);
+            
+            // 构建fileInfo JSON数组
+            List<Map<String, Object>> fileInfoList = new ArrayList<>();
+            for (ReviewFileItem item : changedFiles) {
+                Map<String, Object> fileInfo = new HashMap<>();
+                fileInfo.put("fileName", item.getFileName());
+                fileInfo.put("filePath", item.getFilePath());
+                fileInfoList.add(fileInfo);
+            }
+            
+            String fileInfoJson = gson.toJson(fileInfoList);
+            body.add("fileInfo", fileInfoJson);
+            
+            LOG.info("已添加diffFile到body，文件名: git_changes.diff");
+            LOG.info("diff内容长度: " + diffContent.length() + " 字符");
+            LOG.info("diff内容前100字符: " + diffContent.substring(0, Math.min(100, diffContent.length())));
+            LOG.info("fileInfo JSON: " + fileInfoJson);
+            LOG.info("请求体参数数量: " + body.size());
+            
+            // 构建请求体JSON日志
+            Map<String, Object> requestBodyLog = new HashMap<>();
+            requestBodyLog.put("filesCount", changedFiles.size());
+            requestBodyLog.put("diffFileName", "git_changes.diff");
+            requestBodyLog.put("diffContentLength", diffContent.length());
+            requestBodyLog.put("diffContentPreview", diffContent.substring(0, Math.min(100, diffContent.length())));
+            requestBodyLog.put("fileInfo", fileInfoList);
+            requestBodyLog.put("bodySize", body.size());
+            requestBodyLog.put("contentType", MediaType.MULTIPART_FORM_DATA.toString());
+            
+            String requestBodyJson = gson.toJson(requestBodyLog);
+            LOG.info("请求体JSON日志: " + requestBodyJson);
+            
+            // 创建请求实体
+            HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+            LOG.info("请求实体创建完成");
+            
+            // 发送请求
+            LOG.info("开始发送HTTP请求...");
+            long startTime = System.currentTimeMillis();
+            ResponseEntity<String> response = restTemplate.postForEntity(REVIEW_API_URL, requestEntity, String.class);
+            long endTime = System.currentTimeMillis();
+            
+            LOG.info("=== 变更审查API调用完成 ===");
+            LOG.info("请求耗时: " + (endTime - startTime) + "ms");
+            LOG.info("响应状态码: " + response.getStatusCode());
+            LOG.info("响应头: " + response.getHeaders());
+            LOG.info("响应内容长度: " + (response.getBody() != null ? response.getBody().length() : 0));
+            LOG.info("响应内容: " + response.getBody());
+            
+            if (response.getStatusCode() == HttpStatus.OK) {
+                LOG.info("代码变更审查请求发送成功");
+            } else {
+                LOG.warn("API返回非200状态码: " + response.getStatusCode());
+                throw new RuntimeException("API调用失败：状态码 " + response.getStatusCode());
+            }
+            
+        } catch (Exception e) {
+            LOG.error("=== 调用代码变更审查API时发生异常 ===");
+            LOG.error("异常类型: " + e.getClass().getSimpleName());
+            LOG.error("异常消息: " + e.getMessage());
+            LOG.error("异常堆栈:", e);
             throw new RuntimeException("API调用异常：" + e.getMessage(), e);
         }
     }
