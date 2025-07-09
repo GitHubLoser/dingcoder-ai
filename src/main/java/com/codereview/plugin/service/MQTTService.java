@@ -245,6 +245,18 @@ public final class MQTTService {
                     mqttClient.disconnect();
                     LOG.info("MQTT连接已断开");
                 }
+                
+                // 关闭MQTT客户端
+                if (mqttClient != null) {
+                    try {
+                        mqttClient.close();
+                        LOG.info("MQTT客户端已关闭");
+                    } catch (Exception e) {
+                        LOG.error("关闭MQTT客户端时出错", e);
+                    }
+                    mqttClient = null;
+                }
+                
                 isConnected = false;
                 currentUserSid = null;
                 topicCallbacks.clear();
@@ -254,6 +266,47 @@ public final class MQTTService {
             }
         } catch (Exception e) {
             LOG.error("断开MQTT连接时出错", e);
+        }
+    }
+    
+    /**
+     * 强制清理所有资源（用于插件卸载时）
+     */
+    public void forceCleanup() {
+        LOG.info("开始强制清理MQTT服务资源");
+        try {
+            synchronized (messageLock) {
+                // 断开连接
+                if (mqttClient != null && mqttClient.isConnected()) {
+                    try {
+                        mqttClient.disconnect();
+                        LOG.info("强制断开MQTT连接");
+                    } catch (Exception e) {
+                        LOG.error("强制断开MQTT连接时出错", e);
+                    }
+                }
+                
+                // 关闭客户端
+                if (mqttClient != null) {
+                    try {
+                        mqttClient.close();
+                        LOG.info("强制关闭MQTT客户端");
+                    } catch (Exception e) {
+                        LOG.error("强制关闭MQTT客户端时出错", e);
+                    }
+                    mqttClient = null;
+                }
+                
+                // 清理所有状态
+                isConnected = false;
+                currentUserSid = null;
+                topicCallbacks.clear();
+                pendingMessages.clear();
+                
+                LOG.info("MQTT服务资源清理完成");
+            }
+        } catch (Exception e) {
+            LOG.error("强制清理MQTT服务资源时出错", e);
         }
     }
 

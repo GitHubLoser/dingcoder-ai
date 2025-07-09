@@ -2,6 +2,7 @@ package com.codereview.plugin.ui;
 
 import com.codereview.plugin.auth.AuthService;
 import com.codereview.plugin.auth.LoginDialog;
+import com.codereview.plugin.service.MQTTService;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.JBColor;
@@ -227,11 +228,27 @@ public class MainToolWindowPanel extends JBPanel<MainToolWindowPanel> {
     }
     
     public void dispose() {
-        if (codeGenerationPanel != null) {
-            codeGenerationPanel.dispose();
-        }
-        if (codeReviewPanel != null) {
-            codeReviewPanel.dispose();
+        try {
+            if (codeGenerationPanel != null) {
+                codeGenerationPanel.dispose();
+                codeGenerationPanel = null;
+            }
+            if (codeReviewPanel != null) {
+                codeReviewPanel.dispose();
+                codeReviewPanel = null;
+            }
+            
+            // 清理MQTT服务
+            try {
+                MQTTService mqttService = MQTTService.getInstance();
+                if (mqttService != null && mqttService.isConnected()) {
+                    mqttService.disconnect();
+                }
+            } catch (Exception e) {
+                // 忽略清理时的异常
+            }
+        } catch (Exception e) {
+            // 忽略dispose时的异常
         }
     }
 } 

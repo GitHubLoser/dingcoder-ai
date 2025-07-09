@@ -2,8 +2,11 @@ package com.codereview.plugin.ui;
 
 import com.codereview.plugin.auth.AuthService;
 import com.codereview.plugin.auth.LoginDialog;
+import com.codereview.plugin.service.MQTTService;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.project.ProjectManager;
+import com.intellij.openapi.project.ProjectManagerListener;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowFactory;
 import com.intellij.ui.content.Content;
@@ -63,6 +66,28 @@ public class ChatToolWindowFactory implements ToolWindowFactory {
         });
         
         contentManager.addContent(content);
+        
+        // 添加项目关闭监听器，确保资源正确释放
+        project.getMessageBus().connect().subscribe(ProjectManager.TOPIC, new ProjectManagerListener() {
+            @Override
+            public void projectClosing(@NotNull Project project) {
+                // 项目关闭时清理资源
+                if (currentPanel != null) {
+                    currentPanel.dispose();
+                    currentPanel = null;
+                }
+                
+                // 强制清理MQTT服务
+                try {
+                    MQTTService mqttService = MQTTService.getInstance();
+                    if (mqttService != null) {
+                        mqttService.forceCleanup();
+                    }
+                } catch (Exception e) {
+                    // 忽略清理时的异常
+                }
+            }
+        });
     }
     
     /**

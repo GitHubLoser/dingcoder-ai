@@ -323,7 +323,7 @@ public final class AuthService {
      */
     private void startMqttConnection(String username, String userSid) {
         // 在后台线程异步启动MQTT连接，避免阻塞登录过程
-        new Thread(() -> {
+        Thread mqttThread = new Thread(() -> {
             int retryCount = 0;
             final int maxRetries = 3;
             boolean connected = false;
@@ -388,7 +388,11 @@ public final class AuthService {
                     }
                 });
             }
-        }).start();
+        });
+        
+        // 设置为守护线程，确保IDE关闭时线程能正确退出
+        mqttThread.setDaemon(true);
+        mqttThread.start();
     }
 
     /**

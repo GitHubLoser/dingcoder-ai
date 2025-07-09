@@ -916,15 +916,40 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
      * 释放资源
      */
     public void dispose() {
-        // 释放所有编辑器
-        for (ChatMessage message : chatMessages) {
-            if (!message.isUser() && message.getEditor() != null) {
-                EditorFactory.getInstance().releaseEditor(message.getEditor());
+        try {
+            // 释放所有编辑器
+            for (ChatMessage message : chatMessages) {
+                if (!message.isUser() && message.getEditor() != null) {
+                    try {
+                        EditorFactory.getInstance().releaseEditor(message.getEditor());
+                    } catch (Exception e) {
+                        LOG.error("释放编辑器时出错", e);
+                    }
+                }
             }
+            
+            // 清空消息
+            chatMessages.clear();
+            
+            // 清理UI组件
+            if (chatPanel != null) {
+                chatPanel.removeAll();
+            }
+            
+            // 清理MQTT回调
+            try {
+                MQTTService mqttService = MQTTService.getInstance();
+                if (mqttService != null) {
+                    mqttService.setMessageCallback(MQTTService.FUNCTION_CODE_GENERATION, null);
+                }
+            } catch (Exception e) {
+                LOG.error("清理MQTT回调时出错", e);
+            }
+            
+            LOG.info("ChatToolWindowPanel disposed");
+        } catch (Exception e) {
+            LOG.error("ChatToolWindowPanel dispose时出错", e);
         }
-        // 清空消息
-        chatMessages.clear();
-        chatPanel.removeAll();
     }
     
     // 新增方法：设置MQTT回调
