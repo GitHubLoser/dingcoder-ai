@@ -85,7 +85,9 @@ public final class ReviewFeedbackService {
             LOG.info("准备调用反馈API，URL: " + FEEDBACK_API_URL);
             
             RestTemplate restTemplate = new RestTemplate();
-            
+
+
+
             // 设置请求头
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);

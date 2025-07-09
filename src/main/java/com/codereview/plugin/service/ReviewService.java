@@ -89,39 +89,49 @@ public final class ReviewService {
     }
 
     /**
-     * 审查多个文件或代码片段
+     * 审查多个文件或代码片段（不等待返回值）
      * @param fileItems 要审查的文件项列表
-     * @param callback 结果回调
+     * @param callback 结果回调（可选）
      */
     public void reviewFiles(List<ReviewFileItem> fileItems, Consumer<String> callback) {
         if (!authService.isLoggedIn()) {
-            callback.accept("❌ 错误：用户未登录\n\n请先登录后再进行代码审查。");
+            if (callback != null) {
+                callback.accept("❌ 错误：用户未登录\n\n请先登录后再进行代码审查。");
+            }
             return;
         }
         
         if (fileItems == null || fileItems.isEmpty()) {
-            callback.accept("❌ 错误：没有要审查的文件\n\n请先添加文件或代码片段。");
+            if (callback != null) {
+                callback.accept("❌ 错误：没有要审查的文件\n\n请先添加文件或代码片段。");
+            }
             return;
         }
         
         LOG.info("开始代码审查，文件数量: " + fileItems.size());
         
-        // 异步调用API
+        // 异步调用API，不等待返回值
         new Thread(() -> {
             try {
-                String result = callReviewAPI(fileItems);
-                callback.accept(result);
+                callReviewAPI(fileItems);
+                LOG.info("代码审查请求已发送，不等待返回值");
+                // 可选：发送成功提示
+                if (callback != null) {
+                    callback.accept("✅ 代码审查请求已发送\n\n评审结果将通过MQTT消息返回。");
+                }
             } catch (Exception e) {
                 LOG.error("代码审查API调用失败", e);
-                callback.accept("❌ API调用失败：" + e.getMessage() + "\n\n请检查网络连接或联系管理员。");
+                if (callback != null) {
+                    callback.accept("❌ API调用失败：" + e.getMessage() + "\n\n请检查网络连接或联系管理员。");
+                }
             }
         }).start();
     }
     
     /**
-     * 调用代码审查API
+     * 调用代码审查API（不等待返回值）
      */
-    private String callReviewAPI(List<ReviewFileItem> fileItems) {
+    private void callReviewAPI(List<ReviewFileItem> fileItems) {
         LOG.info("准备调用代码审查API，URL: " + REVIEW_API_URL);
         
         try {
@@ -196,16 +206,15 @@ public final class ReviewService {
             LOG.info("响应内容: " + response.getBody());
             
             if (response.getStatusCode() == HttpStatus.OK) {
-                return parseApiResponse(response.getBody());
+                LOG.info("代码审查请求发送成功");
             } else {
                 LOG.warn("API返回非200状态码: " + response.getStatusCode());
-                return "❌ API调用失败：状态码 " + response.getStatusCode() + "\n\n响应内容：\n" + response.getBody();
+                throw new RuntimeException("API调用失败：状态码 " + response.getStatusCode());
             }
             
         } catch (Exception e) {
             LOG.error("调用代码审查API时发生异常", e);
-            return "❌ API调用异常：" + e.getClass().getSimpleName() + ": " + e.getMessage() + 
-                   "\n\n请检查网络连接和API服务状态。";
+            throw new RuntimeException("API调用异常：" + e.getMessage(), e);
         }
     }
     
