@@ -286,7 +286,8 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         reviewChangesButton.setContentAreaFilled(reviewFileButton.isContentAreaFilled());
         reviewChangesButton.setOpaque(reviewFileButton.isOpaque());
         reviewChangesButton.addActionListener(e -> {
-            showMessage("🔄 正在获取Git变更并评审，请稍候...");
+            // 不显示任何消息，保持评审结果区域空白
+        LOG.info("正在获取Git变更并评审...");
             SwingUtilities.invokeLater(() -> {
                 try {
                     String gitDiff = executeGitDiff();
@@ -407,7 +408,8 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
     private void onAddCurrentFile(ActionEvent e) {
         VirtualFile currentFile = getCurrentFile();
         if (currentFile == null) {
-            showMessage("❌ 没有打开的文件\n\n请先在编辑器中打开一个文件。");
+            // 只在状态栏显示错误，不显示在评审结果区域
+            LOG.warn("没有打开的文件");
             return;
         }
         
@@ -420,19 +422,22 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         ReviewFileItem item = new ReviewFileItem(currentFile.getName(), relativePath, 0, 0, false);
         fileListModel.addElement(item);
         
-        showMessage("✅ 已添加文件: " + currentFile.getName());
+        // 不显示任何消息，保持评审结果区域空白
+        LOG.info("已添加文件: " + currentFile.getName());
     }
     
     private void onAddSelectedCode(ActionEvent e) {
         String selectedCode = getSelectedCodeFromEditor();
         if (selectedCode == null || selectedCode.trim().isEmpty()) {
-            showMessage("❌ 没有选中的代码\n\n请在编辑器中选中要评审的代码片段。");
+            // 只在状态栏显示错误，不显示在评审结果区域
+            LOG.warn("没有选中的代码");
             return;
         }
         
         VirtualFile currentFile = getCurrentFile();
         if (currentFile == null) {
-            showMessage("❌ 无法确定当前文件\n\n请确保在编辑器中打开了文件并选中了代码。");
+            // 只在状态栏显示错误，不显示在评审结果区域
+            LOG.warn("无法确定当前文件");
             return;
         }
         
@@ -454,7 +459,8 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         ReviewFileItem item = new ReviewFileItem(currentFile.getName(), relativePath, startLine, endLine, false);
         fileListModel.addElement(item);
         
-        showMessage("✅ 已添加选中代码: " + currentFile.getName() + " (行 " + startLine + "-" + endLine + ")");
+        // 不显示任何消息，保持评审结果区域空白
+        LOG.info("已添加选中代码: " + currentFile.getName() + " (行 " + startLine + "-" + endLine + ")");
     }
     
     private void onAddProjectFiles(ActionEvent e) {
@@ -474,7 +480,8 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                     fileListModel.addElement(item);
                 }
                 
-                showMessage("✅ 已添加 " + selectedFiles.size() + " 个项目文件");
+                // 不显示任何消息，保持评审结果区域空白
+                LOG.info("已添加 " + selectedFiles.size() + " 个项目文件");
             }
         }
     }
@@ -512,7 +519,8 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             fileListModel.addElement(new ReviewFileItem("提示", "点击 + 按钮或右键菜单添加要评审的文件", 0, 0, true));
         }
         
-        showMessage("✅ 已删除 " + selectedIndices.length + " 个文件");
+        // 不显示任何消息，保持评审结果区域空白
+        LOG.info("已删除 " + selectedIndices.length + " 个文件");
     }
     
     private void deleteFileItem(ReviewFileItem item) {
@@ -523,16 +531,19 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             fileListModel.addElement(new ReviewFileItem("提示", "点击 + 按钮或右键菜单添加要评审的文件", 0, 0, true));
         }
         
-        showMessage("✅ 已删除文件: " + item.getFileName());
+        // 不显示任何消息，保持评审结果区域空白
+        LOG.info("已删除文件: " + item.getFileName());
     }
 
     private void onReviewFiles(ActionEvent e) {
         if (fileListModel.isEmpty() || (fileListModel.size() == 1 && fileListModel.get(0).isPlaceholder())) {
-            showMessage("❌ 没有要评审的文件\n\n请先添加文件或代码片段。");
+            // 只在状态栏显示错误，不显示在评审结果区域
+            LOG.warn("没有要评审的文件");
             return;
         }
         
-        showMessage("🔄 正在进行代码评审，请稍候...\n\n准备文件...");
+        // 不显示任何消息，保持评审结果区域空白
+        LOG.info("正在进行代码评审，准备文件...");
         
         // 构建ReviewService.ReviewFileItem列表
         List<ReviewService.ReviewFileItem> reviewItems = new ArrayList<>();
@@ -572,12 +583,13 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             }
             
             if (reviewItems.isEmpty()) {
-                showMessage("❌ 没有有效的文件可以评审\n\n请检查文件是否可以访问。");
+                // 只在状态栏显示错误，不显示在评审结果区域
+                LOG.warn("没有有效的文件可以评审");
                 return;
             }
             
             LOG.info("准备评审 " + reviewItems.size() + " 个文件/代码片段");
-            showMessage("🔄 正在调用评审API，请稍候...\n\n已准备 " + reviewItems.size() + " 个文件");
+            // 不显示任何消息，保持评审结果区域空白
             
             // 调用新的评审服务
             reviewService.reviewFiles(reviewItems, result -> {
@@ -588,7 +600,8 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             
         } catch (Exception ex) {
             LOG.error("准备评审文件时出错", ex);
-            showMessage("❌ 准备评审文件时出错：" + ex.getMessage() + "\n\n请检查文件权限和网络连接。");
+            // 只在日志中记录错误，不显示在评审结果区域
+            LOG.error("准备评审文件时出错：" + ex.getMessage());
         }
     }
     
@@ -709,10 +722,12 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
     
     private void onReviewChangesInner(String changes) {
         if (changes.isEmpty() || changes.startsWith("点击") || changes.startsWith("没有检测到") || changes.startsWith("获取Git变更时出错")) {
-            showMessage("❌ 错误：没有可评审的变更\n\n请先点击\"评审变更\"按钮获取代码变更。");
+            // 只在日志中记录错误，不显示在评审结果区域
+        LOG.warn("没有可评审的变更");
             return;
         }
-        showMessage("🔄 正在评审代码变更，请稍候...\n\n准备变更内容...");
+        // 不显示任何消息，保持评审结果区域空白
+        LOG.info("正在评审代码变更，准备变更内容...");
         try {
             // 将Git变更作为特殊文件进行评审
             List<ReviewService.ReviewFileItem> reviewItems = new ArrayList<>();
@@ -726,7 +741,8 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                 changes
             ));
             LOG.info("准备评审Git变更，内容长度: " + changes.length() + " 字符");
-            showMessage("🔄 正在调用变更评审API，请稍候...\n\n分析变更内容中...");
+            // 不显示任何消息，保持评审结果区域空白
+            LOG.info("正在调用变更评审API，分析变更内容中...");
             // 调用评审服务
             reviewService.reviewFiles(reviewItems, result -> {
                 SwingUtilities.invokeLater(() -> {
@@ -740,7 +756,8 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             });
         } catch (Exception ex) {
             LOG.error("评审变更时出错", ex);
-            showMessage("❌ 评审变更时出错：" + ex.getMessage() + "\n\n请检查网络连接和API服务状态。");
+                            // 只在日志中记录错误，不显示在评审结果区域
+                LOG.error("评审变更时出错：" + ex.getMessage());
         }
     }
     
@@ -1223,6 +1240,19 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
     }
     
     /**
+     * 清空评审结果区域，不显示任何内容
+     */
+    private void clearResultArea() {
+        if (resultTable.isEditing()) {
+            resultTable.getCellEditor().stopCellEditing();
+        }
+        resultTableModel.setRowCount(0);
+        resultTable.clearSelection();
+        resultTable.revalidate();
+        resultTable.repaint();
+    }
+    
+    /**
      * 解析API返回结果并显示到表格中（替换模式）
      */
     private void parseAndDisplayResult(String result) {
@@ -1687,9 +1717,11 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             
             // 更新按钮状态或样式
             if ("confirmed".equals(feedback)) {
-                showMessage("✅ 已确认评审意见: " + filePath);
+                // 不显示任何消息，保持评审结果区域空白
+        LOG.info("已确认评审意见: " + filePath);
             } else if ("false_positive".equals(feedback)) {
-                showMessage("⚠️ 已标记为误报: " + filePath);
+                // 不显示任何消息，保持评审结果区域空白
+                LOG.info("已标记为误报: " + filePath);
             }
         }
     }
@@ -1765,17 +1797,16 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             // 清除评审文件区域
             fileListModel.clear();
             fileListModel.addElement(new ReviewFileItem("提示", "点击 + 按钮或右键菜单添加要评审的文件", 0, 0, true));
-            // 清除评审结果区域
-            if (resultTable.isEditing()) {
-                resultTable.getCellEditor().stopCellEditing();
-            }
-            resultTableModel.setRowCount(0);
-            resultTable.clearSelection();
-            resultTable.revalidate();
-            resultTable.repaint();
+            
+            // 清除评审结果区域 - 完全清空，不显示任何默认内容
+            clearResultArea();
+            
+            // 重置MQTT状态
             mqttReceived = false; // 重置时禁用反馈按钮
             updateFeedbackButtonsState(); // 更新按钮状态
-            showMessage("✅ 已重置评审面板");
+            
+            // 不显示任何消息，保持评审结果区域完全空白
+            LOG.info("已重置评审面板，评审结果区域已清空");
         }
     }
 
