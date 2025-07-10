@@ -406,7 +406,7 @@ public final class ReviewService {
             ByteArrayResource diffFileResource = new ByteArrayResource(diffContent.getBytes()) {
                 @Override
                 public String getFilename() {
-                    return "git_changes.diff";
+                    return "git_changes.txt";
                 }
             };
             body.add("diffFile", diffFileResource);
