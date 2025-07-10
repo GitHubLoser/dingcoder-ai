@@ -131,7 +131,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         
         // 创建垂直分割面板 - 三个区域一列显示
         JSplitPane topSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
-        topSplitPane.setResizeWeight(0.15);
+        topSplitPane.setResizeWeight(0.25);
         topSplitPane.setDividerSize(0); // 去掉分割线
         topSplitPane.setBorder(null); // 去掉边框
         
@@ -179,8 +179,8 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
     private void adjustSplitPaneLocations(JSplitPane topSplitPane, JSplitPane bottomSplitPane) {
         int totalHeight = getHeight();
         if (totalHeight > 0) {
-            // 文件区域：最小120px，最大200px，占总高度的15%
-            int fileAreaHeight = Math.max(120, Math.min(200, (int)(totalHeight * 0.15)));
+            // 文件区域：最小200px，最大400px，占总高度的25%
+            int fileAreaHeight = Math.max(200, Math.min(400, (int)(totalHeight * 0.25)));
             
             // 变更区域：固定60px，确保按钮和边距完全显示
             int changesAreaHeight = 60;
