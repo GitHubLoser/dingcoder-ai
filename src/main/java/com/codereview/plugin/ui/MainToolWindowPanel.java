@@ -227,8 +227,35 @@ public class MainToolWindowPanel extends JBPanel<MainToolWindowPanel> {
         }
     }
     
+    /**
+     * 清空所有面板内容（退出时调用）
+     */
+    public void clearAllPanelContent() {
+        try {
+            // 清空代码生成面板
+            if (codeGenerationPanel != null) {
+                codeGenerationPanel.clearPanelContent();
+            }
+            
+            // 清空代码审查面板
+            if (codeReviewPanel != null) {
+                codeReviewPanel.clearPanelContent();
+            }
+            
+            // 重新初始化UI状态
+            revalidate();
+            repaint();
+        } catch (Exception e) {
+            // 忽略清空时的异常，确保不影响退出流程
+        }
+    }
+
     public void dispose() {
         try {
+            // 先清空面板内容
+            clearAllPanelContent();
+            
+            // 再释放资源
             if (codeGenerationPanel != null) {
                 codeGenerationPanel.dispose();
                 codeGenerationPanel = null;

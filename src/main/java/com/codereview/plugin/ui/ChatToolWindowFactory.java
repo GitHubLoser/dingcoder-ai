@@ -42,6 +42,9 @@ public class ChatToolWindowFactory implements ToolWindowFactory {
                 Content content = event.getContent();
                 if (content.getComponent() instanceof MainToolWindowPanel) {
                     MainToolWindowPanel panel = (MainToolWindowPanel) content.getComponent();
+                    // 先清空面板内容
+                    panel.clearAllPanelContent();
+                    // 再释放资源
                     panel.dispose();
                     if (panel == currentPanel) {
                         currentPanel = null;
@@ -71,8 +74,11 @@ public class ChatToolWindowFactory implements ToolWindowFactory {
         project.getMessageBus().connect().subscribe(ProjectManager.TOPIC, new ProjectManagerListener() {
             @Override
             public void projectClosing(@NotNull Project project) {
-                // 项目关闭时清理资源
+                // 项目关闭时清空面板内容并清理资源
                 if (currentPanel != null) {
+                    // 先清空面板内容
+                    currentPanel.clearAllPanelContent();
+                    // 再释放资源
                     currentPanel.dispose();
                     currentPanel = null;
                 }
@@ -88,6 +94,15 @@ public class ChatToolWindowFactory implements ToolWindowFactory {
                 }
             }
         });
+    }
+    
+    /**
+     * 清空当前面板内容（退出登录时调用）
+     */
+    public static void clearCurrentPanelContent() {
+        if (currentPanel != null) {
+            currentPanel.clearAllPanelContent();
+        }
     }
     
     /**

@@ -284,6 +284,14 @@ public final class AuthService {
     public void logout() {
         log.info("用户 {} 开始退出登录", currentUser);
         
+        // 清空面板内容
+        try {
+            // 通过ChatToolWindowFactory获取当前面板实例并清空内容
+            com.codereview.plugin.ui.ChatToolWindowFactory.clearCurrentPanelContent();
+        } catch (Exception e) {
+            log.error("清空面板内容时发生错误", e);
+        }
+        
         // 断开MQTT连接
         try {
             MQTTService mqttService = MQTTService.getInstance();

@@ -986,6 +986,53 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         return output.toString();
     }
     
+    /**
+     * 清空面板内容（退出登录时调用）
+     */
+    public void clearPanelContent() {
+        try {
+            LOG.info("开始清空代码审查面板内容");
+            
+            // 清空文件列表
+            if (fileListModel != null) {
+                fileListModel.clear();
+                // 重新添加提示信息
+                fileListModel.addElement(new ReviewFileItem("提示", "点击 + 按钮或右键菜单添加要评审的文件", 0, 0, true));
+            }
+            
+            // 清空审查结果表格
+            if (resultTableModel != null) {
+                resultTableModel.setRowCount(0);
+            }
+            
+            // 清空变更区域的隐藏内容
+            if (changesArea != null) {
+                changesArea.setText("");
+            }
+            
+            // 清空MQTT消息数据
+            if (mqttDataMap != null) {
+                mqttDataMap.clear();
+            }
+            
+            // 重置MQTT接收状态
+            mqttReceived = false;
+            
+            // 刷新UI
+            if (fileList != null) {
+                fileList.revalidate();
+                fileList.repaint();
+            }
+            if (resultTable != null) {
+                resultTable.revalidate();
+                resultTable.repaint();
+            }
+            
+            LOG.info("代码审查面板内容清空完成");
+        } catch (Exception e) {
+            LOG.error("清空代码审查面板内容时出错", e);
+        }
+    }
 
     
     public void dispose() {

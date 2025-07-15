@@ -1060,4 +1060,59 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             return new Insets(borderWidth + 2, borderWidth + 2, borderWidth + 2, borderWidth + 2);
         }
     }
+    
+    /**
+     * 清空面板内容（退出登录时调用）
+     */
+    public void clearPanelContent() {
+        try {
+            LOG.info("开始清空代码生成面板内容");
+            
+            // 释放所有编辑器
+            for (ChatMessage message : chatMessages) {
+                if (!message.isUser() && message.getEditor() != null) {
+                    try {
+                        EditorFactory.getInstance().releaseEditor(message.getEditor());
+                    } catch (Exception e) {
+                        LOG.error("释放编辑器时出错", e);
+                    }
+                }
+            }
+            
+            // 清空消息列表
+            chatMessages.clear();
+            
+            // 清空UI组件
+            if (chatPanel != null) {
+                chatPanel.removeAll();
+                chatPanel.revalidate();
+                chatPanel.repaint();
+            }
+            
+            // 重置发送按钮状态
+            isWaitingForGeneration = false;
+            if (sendButton != null) {
+                sendButton.setText("发送");
+                sendButton.setEnabled(true);
+            }
+            
+            // 清空输入框
+            if (inputField != null) {
+                inputField.setText("");
+            }
+            
+            // 重新显示欢迎面板
+            if (welcomePanel != null) {
+                chatScrollPane.setViewportView(welcomePanel);
+            }
+            
+            LOG.info("代码生成面板内容清空完成");
+        } catch (Exception e) {
+            LOG.error("清空代码生成面板内容时出错", e);
+        }
+    }
+    
+    /**
+     * 释放资源
+     */
 } 
