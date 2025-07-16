@@ -26,6 +26,8 @@ import java.util.ArrayList;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.function.Consumer;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
 
 /**
  * 代码审查服务
@@ -241,6 +243,26 @@ public final class ReviewService {
         }
     }
     
+    // 新增：创建跳过SSL校验的RestTemplate
+    private static RestTemplate createUnsafeRestTemplate() {
+        try {
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+            sslContext.init(null, new TrustManager[]{new javax.net.ssl.X509TrustManager() {
+                public void checkClientTrusted(java.security.cert.X509Certificate[] xcs, String string) {}
+                public void checkServerTrusted(java.security.cert.X509Certificate[] xcs, String string) {}
+                public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0]; }
+            }}, new java.security.SecureRandom());
+
+            javax.net.ssl.HttpsURLConnection.setDefaultSSLSocketFactory(sslContext.getSocketFactory());
+            javax.net.ssl.HttpsURLConnection.setDefaultHostnameVerifier((hostname, session) -> true);
+
+            org.springframework.http.client.SimpleClientHttpRequestFactory requestFactory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
+            return new RestTemplate(requestFactory);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     /**
      * 调用代码审查API（不等待返回值）
      */
@@ -249,7 +271,7 @@ public final class ReviewService {
         LOG.info("API URL: " + REVIEW_API_URL);
         
         try {
-            RestTemplate restTemplate = new RestTemplate();
+            RestTemplate restTemplate = createUnsafeRestTemplate();
             
             // 设置请求头
             HttpHeaders headers = new HttpHeaders();
@@ -269,12 +291,12 @@ public final class ReviewService {
             MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
             LOG.info("开始构建multipart请求体");
             
-            // 添加文件
+            // files参数始终为数组（直接遍历fileItems并add）
             for (int i = 0; i < fileItems.size(); i++) {
                 ReviewFileItem item = fileItems.get(i);
                 LOG.info("添加文件 " + (i + 1) + ": " + item.getFileName() + ", 大小: " + item.getContent().length() + " 字符");
                 LOG.info("文件路径: " + item.getFilePath());
-                
+
                 // 创建文件资源
                 ByteArrayResource fileResource = new ByteArrayResource(item.getContent().getBytes()) {
                     @Override
@@ -282,7 +304,6 @@ public final class ReviewService {
                         return item.getFileName();
                     }
                 };
-                
                 body.add("files", fileResource);
                 LOG.info("已添加文件到body: " + item.getFileName());
             }
@@ -301,7 +322,6 @@ public final class ReviewService {
                 } else {
                     LOG.info("文件 " + item.getFileName() + " 是完整文件");
                 }
-                
                 fileInfoList.add(fileInfo);
             }
             
@@ -364,7 +384,7 @@ public final class ReviewService {
         LOG.info("API URL: " + REVIEW_API_URL);
         
         try {
-            RestTemplate restTemplate = new RestTemplate();
+            RestTemplate restTemplate = createUnsafeRestTemplate();
             
             // 设置请求头
             HttpHeaders headers = new HttpHeaders();
@@ -384,12 +404,12 @@ public final class ReviewService {
             MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
             LOG.info("开始构建multipart请求体");
             
-            // 添加变更的文件 (files 参数)
+            // files参数始终为数组（直接遍历changedFiles并add）
             for (int i = 0; i < changedFiles.size(); i++) {
                 ReviewFileItem item = changedFiles.get(i);
                 LOG.info("添加变更文件 " + (i + 1) + ": " + item.getFileName() + ", 大小: " + item.getContent().length() + " 字符");
                 LOG.info("文件路径: " + item.getFilePath());
-                
+
                 // 创建文件资源
                 ByteArrayResource fileResource = new ByteArrayResource(item.getContent().getBytes()) {
                     @Override
@@ -397,7 +417,6 @@ public final class ReviewService {
                         return item.getFileName();
                     }
                 };
-                
                 body.add("files", fileResource);
                 LOG.info("已添加变更文件到body: " + item.getFileName());
             }
