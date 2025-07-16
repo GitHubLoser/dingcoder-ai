@@ -275,8 +275,8 @@ public final class ReviewService {
             
             // 设置请求头
             HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-            LOG.info("设置Content-Type: " + MediaType.MULTIPART_FORM_DATA);
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            LOG.info("设置Content-Type: " + MediaType.APPLICATION_JSON);
             
             // 添加token
             String token = authService.getToken();
@@ -287,26 +287,26 @@ public final class ReviewService {
                 LOG.warn("未获取到有效token");
             }
             
-            // 构建multipart请求体
-            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-            LOG.info("开始构建multipart请求体");
+            // 构建JSON请求体
+            Map<String, Object> requestBody = new HashMap<>();
+            LOG.info("开始构建JSON请求体");
             
-            // files参数始终为数组（直接遍历fileItems并add）
+            // 构建files数组（DWFile格式）
+            List<Map<String, Object>> filesArray = new ArrayList<>();
             for (int i = 0; i < fileItems.size(); i++) {
                 ReviewFileItem item = fileItems.get(i);
                 LOG.info("添加文件 " + (i + 1) + ": " + item.getFileName() + ", 大小: " + item.getContent().length() + " 字符");
                 LOG.info("文件路径: " + item.getFilePath());
 
-                // 创建文件资源
-                ByteArrayResource fileResource = new ByteArrayResource(item.getContent().getBytes()) {
-                    @Override
-                    public String getFilename() {
-                        return item.getFileName();
-                    }
-                };
-                body.add("files", fileResource);
-                LOG.info("已添加文件到body: " + item.getFileName());
+                Map<String, Object> dwFile = new HashMap<>();
+                dwFile.put("fileName", item.getFileName());
+                dwFile.put("fileContent", item.getContent());
+                dwFile.put("filePath", item.getFilePath());
+                
+                filesArray.add(dwFile);
+                LOG.info("已添加文件到files数组: " + item.getFileName());
             }
+            requestBody.put("files", filesArray);
             
             // 构建fileInfo JSON数组
             List<Map<String, Object>> fileInfoList = new ArrayList<>();
@@ -326,12 +326,12 @@ public final class ReviewService {
             }
             
             String fileInfoJson = gson.toJson(fileInfoList);
-            body.add("fileInfo", fileInfoJson);
+            requestBody.put("fileInfo", fileInfoJson);
             
             LOG.info("fileInfo JSON: " + fileInfoJson);
-            LOG.info("请求体参数数量: " + body.size());
+            LOG.info("请求体参数数量: " + requestBody.size());
             
-            // 构建请求体JSON日志（模拟实际发送的form-data格式）
+            // 构建请求体JSON日志
             Map<String, Object> requestBodyLog = new HashMap<>();
             
             // files字段记录文件名列表
@@ -350,7 +350,7 @@ public final class ReviewService {
             LOG.info("准备发送请求，包含 " + fileItems.size() + " 个文件");
             
             // 创建请求实体
-            HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+            HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
             LOG.info("请求实体创建完成");
             
             // 发送请求
@@ -394,8 +394,8 @@ public final class ReviewService {
             
             // 设置请求头
             HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-            LOG.info("设置Content-Type: " + MediaType.MULTIPART_FORM_DATA);
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            LOG.info("设置Content-Type: " + MediaType.APPLICATION_JSON);
             
             // 添加token
             String token = authService.getToken();
@@ -406,35 +406,33 @@ public final class ReviewService {
                 LOG.warn("未获取到有效token");
             }
             
-            // 构建multipart请求体
-            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-            LOG.info("开始构建multipart请求体");
+            // 构建JSON请求体
+            Map<String, Object> requestBody = new HashMap<>();
+            LOG.info("开始构建JSON请求体");
             
-            // files参数始终为数组（直接遍历changedFiles并add）
+            // 构建files数组（DWFile格式）
+            List<Map<String, Object>> filesArray = new ArrayList<>();
             for (int i = 0; i < changedFiles.size(); i++) {
                 ReviewFileItem item = changedFiles.get(i);
                 LOG.info("添加变更文件 " + (i + 1) + ": " + item.getFileName() + ", 大小: " + item.getContent().length() + " 字符");
                 LOG.info("文件路径: " + item.getFilePath());
 
-                // 创建文件资源
-                ByteArrayResource fileResource = new ByteArrayResource(item.getContent().getBytes()) {
-                    @Override
-                    public String getFilename() {
-                        return item.getFileName();
-                    }
-                };
-                body.add("files", fileResource);
-                LOG.info("已添加变更文件到body: " + item.getFileName());
+                Map<String, Object> dwFile = new HashMap<>();
+                dwFile.put("fileName", item.getFileName());
+                dwFile.put("fileContent", item.getContent());
+                dwFile.put("filePath", item.getFilePath());
+                
+                filesArray.add(dwFile);
+                LOG.info("已添加变更文件到files数组: " + item.getFileName());
             }
+            requestBody.put("files", filesArray);
             
-            // 添加diffFile
-            ByteArrayResource diffFileResource = new ByteArrayResource(diffContent.getBytes()) {
-                @Override
-                public String getFilename() {
-                    return "git_changes.txt";
-                }
-            };
-            body.add("diffFile", diffFileResource);
+            // 添加diffFile（作为单独的DWFile对象）
+            Map<String, Object> diffFile = new HashMap<>();
+            diffFile.put("fileName", "git_changes.txt");
+            diffFile.put("fileContent", diffContent);
+            diffFile.put("filePath", "git_changes.txt");
+            requestBody.put("diffFile", diffFile);
             
             // 构建fileInfo JSON数组
             List<Map<String, Object>> fileInfoList = new ArrayList<>();
@@ -446,15 +444,15 @@ public final class ReviewService {
             }
             
             String fileInfoJson = gson.toJson(fileInfoList);
-            body.add("fileInfo", fileInfoJson);
+            requestBody.put("fileInfo", fileInfoJson);
             
-            LOG.info("已添加diffFile到body，文件名: git_changes.txt");
+            LOG.info("已添加diffFile到requestBody，文件名: git_changes.txt");
             LOG.info("diff内容长度: " + diffContent.length() + " 字符");
             LOG.info("diff内容前100字符: " + diffContent.substring(0, Math.min(100, diffContent.length())));
             LOG.info("fileInfo JSON: " + fileInfoJson);
-            LOG.info("请求体参数数量: " + body.size());
+            LOG.info("请求体参数数量: " + requestBody.size());
             
-            // 构建请求体JSON日志（模拟实际发送的form-data格式）
+            // 构建请求体JSON日志
             Map<String, Object> requestBodyLog = new HashMap<>();
             
             // files字段记录文件名列表
@@ -474,7 +472,7 @@ public final class ReviewService {
             LOG.info("请求体JSON日志: " + requestBodyJson);
             
             // 创建请求实体
-            HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+            HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
             LOG.info("请求实体创建完成");
             
             // 发送请求
