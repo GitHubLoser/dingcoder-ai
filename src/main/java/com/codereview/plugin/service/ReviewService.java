@@ -275,8 +275,8 @@ public final class ReviewService {
             
             // 设置请求头
             HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            LOG.info("设置Content-Type: " + MediaType.APPLICATION_JSON);
+            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+            LOG.info("设置Content-Type: " + MediaType.MULTIPART_FORM_DATA);
             
             // 添加token
             String token = authService.getToken();
@@ -287,28 +287,57 @@ public final class ReviewService {
                 LOG.warn("未获取到有效token");
             }
             
-            // 构建JSON请求体
-            Map<String, Object> requestBody = new HashMap<>();
-            LOG.info("开始构建JSON请求体");
+            // 构建multipart请求体
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            LOG.info("开始构建multipart请求体");
             
-            // 构建files数组（DWFile格式）
-            List<Map<String, Object>> filesArray = new ArrayList<>();
+            // files参数：上传文件流
+            LOG.info("=== 开始添加文件流到multipart请求体 ===");
             for (int i = 0; i < fileItems.size(); i++) {
                 ReviewFileItem item = fileItems.get(i);
-                LOG.info("添加文件 " + (i + 1) + ": " + item.getFileName() + ", 大小: " + item.getContent().length() + " 字符");
-                LOG.info("文件路径: " + item.getFilePath());
+                LOG.info("处理文件 " + (i + 1) + "/" + fileItems.size() + ":");
+                LOG.info("  - 文件名: " + item.getFileName());
+                LOG.info("  - 文件路径: " + item.getFilePath());
+                LOG.info("  - 内容大小: " + item.getContent().length() + " 字符");
+                LOG.info("  - 内容字节大小: " + item.getContent().getBytes().length + " bytes");
 
-                Map<String, Object> dwFile = new HashMap<>();
-                dwFile.put("fileName", item.getFileName());
-                dwFile.put("fileContent", item.getContent());
-                dwFile.put("filePath", item.getFilePath());
+                // 创建文件资源（真正的文件流）
+                ByteArrayResource fileResource = new ByteArrayResource(item.getContent().getBytes()) {
+                    @Override
+                    public String getFilename() {
+                        return item.getFileName();
+                    }
+                };
                 
-                filesArray.add(dwFile);
-                LOG.info("已添加文件到files数组: " + item.getFileName());
+                // 验证文件资源属性
+                LOG.info("  - 文件资源类型: " + fileResource.getClass().getSimpleName());
+                LOG.info("  - 文件资源文件名: " + fileResource.getFilename());
+                LOG.info("  - 文件资源内容长度: " + fileResource.contentLength() + " bytes");
+                LOG.info("  - 文件资源描述: " + fileResource.getDescription());
+                
+                body.add("files", fileResource);
+                LOG.info("  ✅ 已成功添加文件流到multipart body: " + item.getFileName());
+                
+                // 显示文件内容的前3行用于确认文件内容正确
+                if (item.getContent() != null && !item.getContent().isEmpty()) {
+                    String[] lines = item.getContent().split("\n");
+                    int showLines = Math.min(3, lines.length);
+                    StringBuilder preview = new StringBuilder();
+                    for (int j = 0; j < showLines; j++) {
+                        preview.append("    行").append(j + 1).append(": ").append(lines[j]).append("\n");
+                    }
+                    if (lines.length > 3) {
+                        preview.append("    ... (共").append(lines.length).append("行)");
+                    }
+                    LOG.info("  - 文件内容预览:\n" + preview.toString());
+                } else {
+                    LOG.warn("  ⚠️ 文件内容为空: " + item.getFileName());
+                }
+                LOG.info("  ----------------------------------------");
             }
-            requestBody.put("files", filesArray);
+            LOG.info("=== 文件流添加完成，共添加了 " + fileItems.size() + " 个文件 ===");
             
-            // 构建fileInfo JSON数组
+            // fileInfo参数：JSON字符串
             List<Map<String, Object>> fileInfoList = new ArrayList<>();
             for (ReviewFileItem item : fileItems) {
                 Map<String, Object> fileInfo = new HashMap<>();
@@ -326,18 +355,44 @@ public final class ReviewService {
             }
             
             String fileInfoJson = gson.toJson(fileInfoList);
-            requestBody.put("fileInfo", fileInfoJson);
+            body.add("fileInfo", fileInfoJson);
             
-            LOG.info("fileInfo JSON: " + fileInfoJson);
-            LOG.info("请求体参数数量: " + requestBody.size());
+            LOG.info("=== fileInfo参数添加完成 ===");
+            LOG.info("fileInfo JSON内容: " + fileInfoJson);
+            LOG.info("fileInfo JSON长度: " + fileInfoJson.length() + " 字符");
             
-            // 构建请求体JSON日志
+            // 统计multipart请求体信息
+            LOG.info("=== multipart请求体构建完成 ===");
+            LOG.info("请求体总参数数量: " + body.size());
+            LOG.info("参数详情:");
+            body.forEach((key, valueList) -> {
+                LOG.info("  - 参数名: " + key + ", 值数量: " + valueList.size());
+                for (int i = 0; i < valueList.size(); i++) {
+                    Object value = valueList.get(i);
+                    if (value instanceof ByteArrayResource) {
+                        ByteArrayResource resource = (ByteArrayResource) value;
+                        try {
+                            LOG.info("    [" + i + "] 文件流: " + resource.getFilename() + 
+                                   " (大小: " + resource.contentLength() + " bytes)");
+                        } catch (Exception e) {
+                            LOG.info("    [" + i + "] 文件流: " + resource.getFilename() + " (大小获取失败)");
+                        }
+                    } else {
+                        String valueStr = value.toString();
+                        String preview = valueStr.length() > 100 ? 
+                                       valueStr.substring(0, 100) + "..." : valueStr;
+                        LOG.info("    [" + i + "] 文本: " + preview);
+                    }
+                }
+            });
+            
+            // 构建请求体JSON日志（用于简化显示）
             Map<String, Object> requestBodyLog = new HashMap<>();
             
             // files字段记录文件名列表
             List<String> filesInfo = new ArrayList<>();
             for (ReviewFileItem item : fileItems) {
-                filesInfo.add(item.getFileName() + " 文件");
+                filesInfo.add(item.getFileName() + " [文件流]");
             }
             requestBodyLog.put("files", filesInfo);
             
@@ -345,12 +400,16 @@ public final class ReviewService {
             requestBodyLog.put("fileInfo", fileInfoJson);
             
             String requestBodyJson = gson.toJson(requestBodyLog);
-            LOG.info("请求体JSON日志: " + requestBodyJson);
+            LOG.info("=== 请求体摘要 ===");
+            LOG.info(requestBodyJson);
             
-            LOG.info("准备发送请求，包含 " + fileItems.size() + " 个文件");
+            LOG.info("=== 准备发送multipart/form-data请求 ===");
+            LOG.info("包含文件数量: " + fileItems.size() + " 个");
+            LOG.info("Content-Type: multipart/form-data");
+            LOG.info("传输方式: 文件流上传");
             
             // 创建请求实体
-            HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
+            HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
             LOG.info("请求实体创建完成");
             
             // 发送请求
@@ -394,8 +453,8 @@ public final class ReviewService {
             
             // 设置请求头
             HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            LOG.info("设置Content-Type: " + MediaType.APPLICATION_JSON);
+            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+            LOG.info("设置Content-Type: " + MediaType.MULTIPART_FORM_DATA);
             
             // 添加token
             String token = authService.getToken();
@@ -406,35 +465,69 @@ public final class ReviewService {
                 LOG.warn("未获取到有效token");
             }
             
-            // 构建JSON请求体
-            Map<String, Object> requestBody = new HashMap<>();
-            LOG.info("开始构建JSON请求体");
+            // 构建multipart请求体
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            LOG.info("开始构建multipart请求体");
             
-            // 构建files数组（DWFile格式）
-            List<Map<String, Object>> filesArray = new ArrayList<>();
+            // files参数：上传文件流
+            LOG.info("=== 开始添加变更文件流到multipart请求体 ===");
             for (int i = 0; i < changedFiles.size(); i++) {
                 ReviewFileItem item = changedFiles.get(i);
-                LOG.info("添加变更文件 " + (i + 1) + ": " + item.getFileName() + ", 大小: " + item.getContent().length() + " 字符");
-                LOG.info("文件路径: " + item.getFilePath());
+                LOG.info("处理变更文件 " + (i + 1) + "/" + changedFiles.size() + ":");
+                LOG.info("  - 文件名: " + item.getFileName());
+                LOG.info("  - 文件路径: " + item.getFilePath());
+                LOG.info("  - 内容大小: " + item.getContent().length() + " 字符");
+                LOG.info("  - 内容字节大小: " + item.getContent().getBytes().length + " bytes");
 
-                Map<String, Object> dwFile = new HashMap<>();
-                dwFile.put("fileName", item.getFileName());
-                dwFile.put("fileContent", item.getContent());
-                dwFile.put("filePath", item.getFilePath());
+                // 创建文件资源（真正的文件流）
+                ByteArrayResource fileResource = new ByteArrayResource(item.getContent().getBytes()) {
+                    @Override
+                    public String getFilename() {
+                        return item.getFileName();
+                    }
+                };
                 
-                filesArray.add(dwFile);
-                LOG.info("已添加变更文件到files数组: " + item.getFileName());
+                // 验证文件资源属性
+                LOG.info("  - 文件资源类型: " + fileResource.getClass().getSimpleName());
+                LOG.info("  - 文件资源文件名: " + fileResource.getFilename());
+                try {
+                    LOG.info("  - 文件资源内容长度: " + fileResource.contentLength() + " bytes");
+                } catch (Exception e) {
+                    LOG.info("  - 文件资源内容长度: 获取失败");
+                }
+                LOG.info("  - 文件资源描述: " + fileResource.getDescription());
+                
+                body.add("files", fileResource);
+                LOG.info("  ✅ 已成功添加变更文件流到multipart body: " + item.getFileName());
+                LOG.info("  ----------------------------------------");
             }
-            requestBody.put("files", filesArray);
+            LOG.info("=== 变更文件流添加完成，共添加了 " + changedFiles.size() + " 个文件 ===");
             
-            // 添加diffFile（作为单独的DWFile对象）
-            Map<String, Object> diffFile = new HashMap<>();
-            diffFile.put("fileName", "git_changes.txt");
-            diffFile.put("fileContent", diffContent);
-            diffFile.put("filePath", "git_changes.txt");
-            requestBody.put("diffFile", diffFile);
+            // diffFile参数：上传diff文件流
+            LOG.info("=== 添加diff文件流 ===");
+            LOG.info("diff文件名: git_changes.txt");
+            LOG.info("diff内容大小: " + diffContent.length() + " 字符");
+            LOG.info("diff内容字节大小: " + diffContent.getBytes().length + " bytes");
             
-            // 构建fileInfo JSON数组
+            ByteArrayResource diffFileResource = new ByteArrayResource(diffContent.getBytes()) {
+                @Override
+                public String getFilename() {
+                    return "git_changes.txt";
+                }
+            };
+            
+            LOG.info("diff文件资源类型: " + diffFileResource.getClass().getSimpleName());
+            LOG.info("diff文件资源文件名: " + diffFileResource.getFilename());
+            try {
+                LOG.info("diff文件资源内容长度: " + diffFileResource.contentLength() + " bytes");
+            } catch (Exception e) {
+                LOG.info("diff文件资源内容长度: 获取失败");
+            }
+            
+            body.add("diffFile", diffFileResource);
+            LOG.info("✅ 已成功添加diff文件流到multipart body");
+            
+            // fileInfo参数：JSON字符串
             List<Map<String, Object>> fileInfoList = new ArrayList<>();
             for (ReviewFileItem item : changedFiles) {
                 Map<String, Object> fileInfo = new HashMap<>();
@@ -444,35 +537,66 @@ public final class ReviewService {
             }
             
             String fileInfoJson = gson.toJson(fileInfoList);
-            requestBody.put("fileInfo", fileInfoJson);
+            body.add("fileInfo", fileInfoJson);
             
-            LOG.info("已添加diffFile到requestBody，文件名: git_changes.txt");
-            LOG.info("diff内容长度: " + diffContent.length() + " 字符");
-            LOG.info("diff内容前100字符: " + diffContent.substring(0, Math.min(100, diffContent.length())));
-            LOG.info("fileInfo JSON: " + fileInfoJson);
-            LOG.info("请求体参数数量: " + requestBody.size());
+            LOG.info("=== fileInfo参数添加完成 ===");
+            LOG.info("fileInfo JSON内容: " + fileInfoJson);
+            LOG.info("fileInfo JSON长度: " + fileInfoJson.length() + " 字符");
+            LOG.info("diff内容前100字符预览: " + diffContent.substring(0, Math.min(100, diffContent.length())));
             
-            // 构建请求体JSON日志
+            // 统计multipart请求体信息
+            LOG.info("=== multipart请求体构建完成 ===");
+            LOG.info("请求体总参数数量: " + body.size());
+            LOG.info("参数详情:");
+            body.forEach((key, valueList) -> {
+                LOG.info("  - 参数名: " + key + ", 值数量: " + valueList.size());
+                for (int i = 0; i < valueList.size(); i++) {
+                    Object value = valueList.get(i);
+                    if (value instanceof ByteArrayResource) {
+                        ByteArrayResource resource = (ByteArrayResource) value;
+                        try {
+                            LOG.info("    [" + i + "] 文件流: " + resource.getFilename() + 
+                                   " (大小: " + resource.contentLength() + " bytes)");
+                        } catch (Exception e) {
+                            LOG.info("    [" + i + "] 文件流: " + resource.getFilename() + " (大小获取失败)");
+                        }
+                    } else {
+                        String valueStr = value.toString();
+                        String preview = valueStr.length() > 100 ? 
+                                       valueStr.substring(0, 100) + "..." : valueStr;
+                        LOG.info("    [" + i + "] 文本: " + preview);
+                    }
+                }
+            });
+            
+            // 构建请求体JSON日志（用于简化显示）
             Map<String, Object> requestBodyLog = new HashMap<>();
             
             // files字段记录文件名列表
             List<String> filesInfo = new ArrayList<>();
             for (ReviewFileItem item : changedFiles) {
-                filesInfo.add(item.getFileName() + " 文件");
+                filesInfo.add(item.getFileName() + " [文件流]");
             }
             requestBodyLog.put("files", filesInfo);
             
             // diffFile字段
-            requestBodyLog.put("diffFile", "git_changes.txt 文件");
+            requestBodyLog.put("diffFile", "git_changes.txt [文件流]");
             
             // fileInfo字段记录JSON字符串格式
             requestBodyLog.put("fileInfo", fileInfoJson);
             
             String requestBodyJson = gson.toJson(requestBodyLog);
-            LOG.info("请求体JSON日志: " + requestBodyJson);
+            LOG.info("=== 请求体摘要 ===");
+            LOG.info(requestBodyJson);
+            
+            LOG.info("=== 准备发送multipart/form-data变更审查请求 ===");
+            LOG.info("包含变更文件数量: " + changedFiles.size() + " 个");
+            LOG.info("包含diff文件: 1 个");
+            LOG.info("Content-Type: multipart/form-data");
+            LOG.info("传输方式: 文件流上传");
             
             // 创建请求实体
-            HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
+            HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
             LOG.info("请求实体创建完成");
             
             // 发送请求
