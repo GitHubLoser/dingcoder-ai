@@ -707,6 +707,9 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             LOG.warn("没有要评审的文件");
             return;
         }
+        // 禁用按钮并提示评审中
+        reviewFileButton.setEnabled(false);
+        reviewFileButton.setText("评审中...");
         
         // 不显示任何消息，保持评审结果区域空白
         LOG.info("正在进行代码评审，准备文件...");
@@ -1094,6 +1097,12 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                 parseAndAppendResult(message);
                 LOG.info("代码审查消息已追加显示在结果区域");
                 updateFeedbackButtonsState(); // 更新按钮状态
+                // 检查是否审查结束
+                if (message != null && message.contains("审查结束")) {
+                    reviewFileButton.setEnabled(true);
+                    reviewFileButton.setText("开始评审");
+                    JOptionPane.showMessageDialog(this, "本次审查结束", "提示", JOptionPane.INFORMATION_MESSAGE);
+                }
             } catch (Exception e) {
                 LOG.error("处理代码审查MQTT消息时出错", e);
             }
