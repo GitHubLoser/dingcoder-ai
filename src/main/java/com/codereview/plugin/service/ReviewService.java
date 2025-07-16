@@ -331,12 +331,18 @@ public final class ReviewService {
             LOG.info("fileInfo JSON: " + fileInfoJson);
             LOG.info("请求体参数数量: " + body.size());
             
-            // 构建请求体JSON日志
+            // 构建请求体JSON日志（模拟实际发送的form-data格式）
             Map<String, Object> requestBodyLog = new HashMap<>();
-            requestBodyLog.put("fileCount", fileItems.size());
-            requestBodyLog.put("fileInfo", fileInfoList);
-            requestBodyLog.put("bodySize", body.size());
-            requestBodyLog.put("contentType", MediaType.MULTIPART_FORM_DATA.toString());
+            
+            // files字段记录文件名列表
+            List<String> filesInfo = new ArrayList<>();
+            for (ReviewFileItem item : fileItems) {
+                filesInfo.add(item.getFileName() + " 文件");
+            }
+            requestBodyLog.put("files", filesInfo);
+            
+            // fileInfo字段记录JSON字符串格式
+            requestBodyLog.put("fileInfo", fileInfoJson);
             
             String requestBodyJson = gson.toJson(requestBodyLog);
             LOG.info("请求体JSON日志: " + requestBodyJson);
@@ -442,21 +448,27 @@ public final class ReviewService {
             String fileInfoJson = gson.toJson(fileInfoList);
             body.add("fileInfo", fileInfoJson);
             
-            LOG.info("已添加diffFile到body，文件名: git_changes.diff");
+            LOG.info("已添加diffFile到body，文件名: git_changes.txt");
             LOG.info("diff内容长度: " + diffContent.length() + " 字符");
             LOG.info("diff内容前100字符: " + diffContent.substring(0, Math.min(100, diffContent.length())));
             LOG.info("fileInfo JSON: " + fileInfoJson);
             LOG.info("请求体参数数量: " + body.size());
             
-            // 构建请求体JSON日志
+            // 构建请求体JSON日志（模拟实际发送的form-data格式）
             Map<String, Object> requestBodyLog = new HashMap<>();
-            requestBodyLog.put("filesCount", changedFiles.size());
-            requestBodyLog.put("diffFileName", "git_changes.diff");
-            requestBodyLog.put("diffContentLength", diffContent.length());
-            requestBodyLog.put("diffContentPreview", diffContent.substring(0, Math.min(100, diffContent.length())));
-            requestBodyLog.put("fileInfo", fileInfoList);
-            requestBodyLog.put("bodySize", body.size());
-            requestBodyLog.put("contentType", MediaType.MULTIPART_FORM_DATA.toString());
+            
+            // files字段记录文件名列表
+            List<String> filesInfo = new ArrayList<>();
+            for (ReviewFileItem item : changedFiles) {
+                filesInfo.add(item.getFileName() + " 文件");
+            }
+            requestBodyLog.put("files", filesInfo);
+            
+            // diffFile字段
+            requestBodyLog.put("diffFile", "git_changes.txt 文件");
+            
+            // fileInfo字段记录JSON字符串格式
+            requestBodyLog.put("fileInfo", fileInfoJson);
             
             String requestBodyJson = gson.toJson(requestBodyLog);
             LOG.info("请求体JSON日志: " + requestBodyJson);
