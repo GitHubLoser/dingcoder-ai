@@ -1077,6 +1077,27 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                 LOG.info("开始设置代码审查MQTT回调函数");
                 mqttService.setMessageCallback(MQTTService.FUNCTION_CODE_REVIEW, this::onCodeReviewMqttMessage);
                 LOG.info("代码审查MQTT回调函数设置完成");
+                
+                // 如果MQTT还没连接，延迟重试设置回调
+                if (!mqttService.isConnected()) {
+                    LOG.info("MQTT未连接，将延迟重试设置代码审查回调");
+                    SwingUtilities.invokeLater(() -> {
+                        Timer timer = new Timer(2000, e -> {
+                            try {
+                                if (mqttService.isConnected()) {
+                                    LOG.info("MQTT已连接，重新设置代码审查回调");
+                                    mqttService.setMessageCallback(MQTTService.FUNCTION_CODE_REVIEW, this::onCodeReviewMqttMessage);
+                                    LOG.info("延迟设置代码审查MQTT回调函数完成");
+                                    ((Timer) e.getSource()).stop();
+                                }
+                            } catch (Exception ex) {
+                                LOG.error("延迟设置代码审查回调时出错", ex);
+                            }
+                        });
+                        timer.setRepeats(true);
+                        timer.start();
+                    });
+                }
             } else {
                 LOG.error("MQTT服务实例为空，无法设置代码审查回调");
             }
@@ -1093,16 +1114,18 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         mqttReceived = true; // 收到MQTT消息，允许反馈按钮可用
         SwingUtilities.invokeLater(() -> {
             try {
-                // 将消息追加到评审结果区域
-                parseAndAppendResult(message);
-                LOG.info("代码审查消息已追加显示在结果区域");
-                updateFeedbackButtonsState(); // 更新按钮状态
                 // 检查是否审查结束
                 if (message != null && message.contains("审查结束")) {
                     reviewFileButton.setEnabled(true);
                     reviewFileButton.setText("开始评审");
                     JOptionPane.showMessageDialog(this, "本次审查结束", "提示", JOptionPane.INFORMATION_MESSAGE);
+                    return; // 直接返回，不展示在评审结果区域
                 }
+                
+                // 将消息追加到评审结果区域
+                parseAndAppendResult(message);
+                LOG.info("代码审查消息已追加显示在结果区域");
+                updateFeedbackButtonsState(); // 更新按钮状态
             } catch (Exception e) {
                 LOG.error("处理代码审查MQTT消息时出错", e);
             }
@@ -1752,7 +1775,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             confirmButton.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
             confirmButton.setContentAreaFilled(true);
             confirmButton.setBackground(new Color(76, 175, 80)); // Material Design Green
-            confirmButton.setEnabled(mqttReceived);
+            confirmButton.setEnabled(true); // 确认按钮始终启用，在点击时检查状态
             confirmButton.setForeground(Color.WHITE);
             confirmButton.setOpaque(true);
             confirmButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
@@ -1803,14 +1826,11 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                 }
             });
             
-            // 只有确认按钮在MQTT消息接收前禁用，误报按钮始终可用
-            if (!mqttReceived) {
-                confirmButton.setBackground(new Color(189, 189, 189));
-                confirmButton.setForeground(new Color(117, 117, 117));
-                // 误报按钮保持启用状态的样式
-                falsePositiveButton.setBackground(new Color(255, 152, 0));
-                falsePositiveButton.setForeground(Color.WHITE);
-            }
+            // 设置按钮正常状态的样式
+            confirmButton.setBackground(new Color(76, 175, 80)); // Material Design Green
+            confirmButton.setForeground(Color.WHITE);
+            falsePositiveButton.setBackground(new Color(255, 152, 0));
+            falsePositiveButton.setForeground(Color.WHITE);
             
             // 使用GridBagConstraints将按钮添加到容器中，实现完美居中
             GridBagConstraints gbc = new GridBagConstraints();
@@ -1853,7 +1873,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             confirmButton.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
             confirmButton.setContentAreaFilled(true);
             confirmButton.setBackground(new Color(76, 175, 80)); // Material Design Green
-            confirmButton.setEnabled(mqttReceived);
+            confirmButton.setEnabled(true); // 确认按钮始终启用，在点击时检查状态
             confirmButton.setForeground(Color.WHITE);
             confirmButton.setOpaque(true);
             confirmButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
@@ -1922,22 +1942,24 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                 }
             });
             
-            // 只有确认按钮在MQTT消息接收前禁用，误报按钮始终可用
-            if (!mqttReceived) {
-                confirmButton.setBackground(new Color(189, 189, 189));
-                confirmButton.setForeground(new Color(117, 117, 117));
-                // 误报按钮保持启用状态的样式
-                falsePositiveButton.setBackground(new Color(255, 152, 0));
-                falsePositiveButton.setForeground(Color.WHITE);
-            }
+            // 设置按钮正常状态的样式
+            confirmButton.setBackground(new Color(76, 175, 80)); // Material Design Green
+            confirmButton.setForeground(Color.WHITE);
+            falsePositiveButton.setBackground(new Color(255, 152, 0));
+            falsePositiveButton.setForeground(Color.WHITE);
             
             confirmButton.addActionListener(e -> {
+                LOG.info("=== 确认按钮被点击 ===");
+                LOG.info("确认按钮ActionListener被触发，行号: " + editingRow);
+                LOG.info("当前mqttReceived状态: " + mqttReceived);
                 onFeedbackClick("confirmed", editingRow);
                 fireEditingStopped();
             });
             falsePositiveButton.addActionListener(e -> {
+                LOG.info("=== 误报按钮被点击 ===");
                 LOG.info("❎按钮被点击，行号: " + editingRow);
-                showFalsePositiveDialog(editingRow);
+                LOG.info("当前mqttReceived状态: " + mqttReceived);
+                onFeedbackClick("false_positive", editingRow);
                 fireEditingStopped();
             });
             
@@ -1968,6 +1990,17 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         }
         
         private void onFeedbackClick(String feedback, int row) {
+            LOG.info("=== 反馈按钮点击事件 ===");
+            LOG.info("反馈类型: " + feedback + ", 行号: " + row);
+            LOG.info("mqttReceived状态: " + mqttReceived);
+            LOG.info("mqttDataMap大小: " + mqttDataMap.size());
+            
+            // 检查是否可以提交反馈（MQTT消息是否已接收）
+            if (!mqttReceived) {
+                LOG.warn("MQTT消息未接收完成，按钮应该是禁用状态");
+                return;
+            }
+            
             // 获取当前行的文件路径和评审意见
             String filePath = (String) resultTableModel.getValueAt(row, 0);
             String review = (String) resultTableModel.getValueAt(row, 1);
@@ -1976,17 +2009,25 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             
             // 获取MQTT消息数据
             MqttMessageData mqttData = mqttDataMap.get(row);
+            LOG.info("行 " + row + " 的MQTT数据: " + (mqttData != null ? mqttData.toString() : "null"));
+            
             if (mqttData == null || !mqttData.hasValidData()) {
                 LOG.warn("行 " + row + " 没有有效的MQTT数据，无法提交反馈");
+                LOG.warn("MQTT数据详情: " + (mqttData != null ? 
+                    "codeSubmtRecdNo=" + mqttData.codeSubmtRecdNo + 
+                    ", codeFileNo=" + mqttData.codeFileNo + 
+                    ", codeSliceNo=" + mqttData.codeSliceNo : "数据为null"));
                 return;
             }
             
             if ("confirmed".equals(feedback)) {
                 // 已确认 - 直接调用反馈接口
+                LOG.info("开始提交确认反馈...");
                 submitFeedback(mqttData, "2", "", row);
                 LOG.info("已确认评审意见: " + filePath);
             } else if ("false_positive".equals(feedback)) {
                 // 误报 - 显示输入框让用户填写原因
+                LOG.info("显示误报输入对话框...");
                 showFalsePositiveDialog(row);
             }
         }
@@ -2247,17 +2288,25 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
 
     // 误报提交处理
     private void onFalsePositiveSubmit(int row, String reason) {
+        LOG.info("=== 误报反馈提交 ===");
         String filePath = (String) resultTableModel.getValueAt(row, 0);
-        LOG.info("用户误报反馈: " + filePath + ", 原因: " + reason);
+        LOG.info("用户误报反馈: " + filePath + ", 原因: " + reason + ", 行号: " + row);
         
         // 获取MQTT消息数据
         MqttMessageData mqttData = mqttDataMap.get(row);
+        LOG.info("获取到的MQTT数据: " + (mqttData != null ? mqttData.toString() : "null"));
+        
         if (mqttData == null || !mqttData.hasValidData()) {
             LOG.warn("行 " + row + " 没有有效的MQTT数据，无法提交误报反馈");
+            LOG.warn("MQTT数据详情: " + (mqttData != null ? 
+                "codeSubmtRecdNo=" + mqttData.codeSubmtRecdNo + 
+                ", codeFileNo=" + mqttData.codeFileNo + 
+                ", codeSliceNo=" + mqttData.codeSliceNo : "数据为null"));
             return;
         }
         
         // 调用反馈接口，状态为"3"（误报），描述为用户输入的原因
+        LOG.info("开始提交误报反馈，状态=3，描述=" + reason);
         submitFeedback(mqttData, "3", reason, row);
     }
     
@@ -2292,7 +2341,13 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
      * 提交反馈到服务器
      */
     private void submitFeedback(MqttMessageData mqttData, String feedbackStatus, String description, int row) {
-        LOG.info("提交反馈: 状态=" + feedbackStatus + ", 描述=" + description + ", MQTT数据=" + mqttData);
+        LOG.info("=== 开始提交反馈到服务器 ===");
+        LOG.info("提交反馈: 状态=" + feedbackStatus + ", 描述=" + description + ", 行号=" + row);
+        LOG.info("MQTT数据=" + mqttData);
+        LOG.info("详细参数: codeSubmtRecdNo=" + mqttData.codeSubmtRecdNo + 
+                ", codeFileNo=" + mqttData.codeFileNo + 
+                ", codeSliceNo=" + mqttData.codeSliceNo + 
+                ", seq=" + mqttData.seq);
         
         feedbackService.submitFeedback(
             mqttData.codeSubmtRecdNo,
@@ -2304,10 +2359,10 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             success -> {
                 SwingUtilities.invokeLater(() -> {
                     if (success) {
-                        LOG.info("反馈提交成功，行号: " + row);
+                        LOG.info("反馈提交成功，行号: " + row + ", 状态: " + feedbackStatus);
                         // 可以在这里更新UI状态，比如禁用按钮或显示已提交状态
                     } else {
-                        LOG.error("反馈提交失败，行号: " + row);
+                        LOG.error("反馈提交失败，行号: " + row + ", 状态: " + feedbackStatus);
                         // 可以在这里显示错误消息
                     }
                 });
