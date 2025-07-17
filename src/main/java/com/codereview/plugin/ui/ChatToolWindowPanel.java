@@ -484,7 +484,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             // 生成Java文件按钮
             JButton generateButton = new JButton("生成Java文件");
             generateButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
-            generateButton.setForeground(new JBColor(Color.WHITE, Color.WHITE));
+            generateButton.setForeground(JBColor.foreground());
             generateButton.setBackground(new JBColor(new Color(0x2B5AB8), new Color(0x2B5AB8)));
             generateButton.setBorder(BorderFactory.createEmptyBorder(6, 12, 6, 12));
             generateButton.setFocusPainted(false);
@@ -639,7 +639,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     private JButton createStyledButton(String text, Color bgColor) {
         JButton button = new JButton(text);
         button.setBackground(bgColor);
-        button.setForeground(Color.WHITE);
+        button.setForeground(JBColor.foreground());
         button.setBorder(JBUI.Borders.empty(8, 16));
         button.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
         button.setCursor(new Cursor(Cursor.HAND_CURSOR));
@@ -669,7 +669,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         
         // 设置按钮样式
         button.setBackground(SEND_BUTTON_COLOR);
-        button.setForeground(Color.WHITE);
+        button.setForeground(JBColor.foreground());
         button.setBorder(new RoundedBorder(6, SEND_BUTTON_COLOR, 0));
         button.setFocusPainted(false);
         button.setCursor(new Cursor(Cursor.HAND_CURSOR));
@@ -755,7 +755,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         // 创建批量生成按钮
         JButton batchGenerateButton = new JButton("批量生成全部文件");
         batchGenerateButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
-        batchGenerateButton.setForeground(new JBColor(Color.WHITE, Color.WHITE));
+        batchGenerateButton.setForeground(JBColor.foreground());
         batchGenerateButton.setBackground(new JBColor(new Color(0x2B5AB8), new Color(0x2B5AB8)));
         batchGenerateButton.setBorder(BorderFactory.createEmptyBorder(6, 12, 6, 12));
         batchGenerateButton.setFocusPainted(false);

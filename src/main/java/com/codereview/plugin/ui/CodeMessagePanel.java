@@ -200,7 +200,7 @@ public class CodeMessagePanel extends JBPanel<CodeMessagePanel> {
         JButton button = new JButton(text);
         Font normalFont = UIUtil.getFont(UIUtil.FontSize.NORMAL, null);
         button.setFont(normalFont);
-        button.setForeground(Color.WHITE);
+        button.setForeground(JBColor.foreground());
         button.setBackground(bgColor);
         button.setBorder(JBUI.Borders.empty(8, 16));
         button.setFocusPainted(false);
