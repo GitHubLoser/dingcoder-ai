@@ -833,24 +833,9 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                 return null;
             }
             
+            // 始终返回整个文件内容，不管是否是代码片段
             String fullContent = new String(file.contentsToByteArray(), file.getCharset());
-            
-            // 如果是代码片段，提取对应行的内容
-            if (uiItem.getStartLine() > 0 && uiItem.getEndLine() > 0) {
-                String[] lines = fullContent.split("\n");
-                StringBuilder selectedContent = new StringBuilder();
-                
-                int start = Math.max(0, uiItem.getStartLine() - 1); // 转换为0基索引
-                int end = Math.min(lines.length, uiItem.getEndLine());
-                
-                for (int i = start; i < end; i++) {
-                    selectedContent.append(lines[i]).append("\n");
-                }
-                
-                return selectedContent.toString();
-            } else {
-                return fullContent;
-            }
+            return fullContent;
             
         } catch (Exception e) {
             LOG.error("读取文件内容失败: " + uiItem.getFileName(), e);
