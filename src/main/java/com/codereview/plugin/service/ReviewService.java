@@ -176,42 +176,33 @@ public final class ReviewService {
         String[] lines = diffContent.split("\n");
         
         String currentFile = null;
-        StringBuilder fileContent = new StringBuilder();
         
         for (String line : lines) {
             if (line.startsWith("diff --git")) {
-                // 保存前一个文件
-                if (currentFile != null && fileContent.length() > 0) {
-                    String fileName = extractFileName(currentFile);
-                    try {
-                        String content = getFileContentFromProject(currentFile);
-                        if (content != null) {
-                            changedFiles.add(new ReviewFileItem(fileName, currentFile, content));
-                        }
-                    } catch (Exception e) {
-                        LOG.warn("无法获取文件内容: " + currentFile + ", 错误: " + e.getMessage());
-                    }
-                }
-                
                 // 开始新文件
                 String[] parts = line.split(" ");
                 if (parts.length >= 4) {
-                    currentFile = parts[2].substring(2); // 移除 "a/" 前缀
+                    // 从 "a/src/main/java/Test.java" 格式中提取文件路径
+                    String filePath = parts[2].substring(2); // 移除 "a/" 前缀
+                    currentFile = filePath;
+                    LOG.info("从diff中解析到文件: " + currentFile);
                 }
-                fileContent = new StringBuilder();
             }
         }
         
-        // 处理最后一个文件
+        // 处理所有解析到的文件
         if (currentFile != null) {
             String fileName = extractFileName(currentFile);
             try {
                 String content = getFileContentFromProject(currentFile);
                 if (content != null) {
                     changedFiles.add(new ReviewFileItem(fileName, currentFile, content));
+                    LOG.info("成功获取文件内容: " + currentFile + " (大小: " + content.length() + " 字符)");
+                } else {
+                    LOG.warn("无法获取文件内容: " + currentFile);
                 }
             } catch (Exception e) {
-                LOG.warn("无法获取文件内容: " + currentFile + ", 错误: " + e.getMessage());
+                LOG.warn("获取文件内容时出错: " + currentFile + ", 错误: " + e.getMessage());
             }
         }
         
@@ -234,19 +225,89 @@ public final class ReviewService {
     private String getFileContentFromProject(String relativePath) {
         try {
             String basePath = project.getBasePath();
-            if (basePath == null) return null;
-            
-            VirtualFile file = project.getBaseDir().findFileByRelativePath(relativePath);
-            if (file == null || !file.exists()) {
-                LOG.warn("文件不存在: " + relativePath);
+            if (basePath == null) {
+                LOG.warn("无法获取项目基础路径");
                 return null;
             }
             
-            return getFileContent(file);
+            LOG.info("尝试获取文件内容: " + relativePath);
+            LOG.info("项目基础路径: " + basePath);
+            
+            // 方法1：通过相对路径查找
+            VirtualFile file = project.getBaseDir().findFileByRelativePath(relativePath);
+            if (file != null && file.exists()) {
+                LOG.info("通过相对路径找到文件: " + file.getPath());
+                return getFileContent(file);
+            }
+            
+            // 方法2：通过完整路径查找
+            String fullPath = basePath + "/" + relativePath;
+            file = project.getBaseDir().getFileSystem().findFileByPath(fullPath);
+            if (file != null && file.exists()) {
+                LOG.info("通过完整路径找到文件: " + file.getPath());
+                return getFileContent(file);
+            }
+            
+            // 方法3：通过文件名查找
+            String fileName = extractFileName(relativePath);
+            LOG.info("尝试通过文件名查找: " + fileName);
+            file = findFileByName(fileName);
+            if (file != null && file.exists()) {
+                LOG.info("通过文件名找到文件: " + file.getPath());
+                return getFileContent(file);
+            }
+            
+            LOG.warn("无法找到文件: " + relativePath);
+            return null;
         } catch (Exception e) {
             LOG.error("获取文件内容失败: " + relativePath, e);
             return null;
         }
+    }
+    
+    /**
+     * 通过文件名查找文件
+     */
+    private VirtualFile findFileByName(String fileName) {
+        try {
+            // 首先尝试在当前打开的文件中查找
+            VirtualFile[] openFiles = FileEditorManager.getInstance(project).getOpenFiles();
+            for (VirtualFile file : openFiles) {
+                if (fileName.equals(file.getName())) {
+                    return file;
+                }
+            }
+            
+            // 如果没找到，在整个项目中搜索
+            VirtualFile projectRoot = project.getBaseDir();
+            if (projectRoot != null) {
+                return findFileRecursively(projectRoot, fileName);
+            }
+            
+            return null;
+        } catch (Exception e) {
+            LOG.error("通过文件名查找文件失败: " + fileName, e);
+            return null;
+        }
+    }
+    
+    /**
+     * 递归查找文件
+     */
+    private VirtualFile findFileRecursively(VirtualFile directory, String fileName) {
+        if (directory.isDirectory()) {
+            for (VirtualFile child : directory.getChildren()) {
+                if (child.isDirectory()) {
+                    VirtualFile found = findFileRecursively(child, fileName);
+                    if (found != null) {
+                        return found;
+                    }
+                } else if (fileName.equals(child.getName())) {
+                    return child;
+                }
+            }
+        }
+        return null;
     }
     
     // 新增：创建跳过SSL校验的RestTemplate
@@ -631,17 +692,15 @@ public final class ReviewService {
                 }
                 
                 String fileInfoJson = gson.toJson(fileInfoList);
-                
                 LOG.info("=== fileInfo参数构建完成 ===");
                 LOG.info("fileInfo JSON内容: " + fileInfoJson);
                 LOG.info("fileInfo JSON长度: " + fileInfoJson.length() + " 字符");
-                LOG.info("diff内容前100字符预览: " + diffContent.substring(0, Math.min(100, diffContent.length())));
                 
                 // 构建完整的请求体
                 Map<String, Object> requestBody = new HashMap<>();
                 requestBody.put("files", dwFiles);
                 requestBody.put("diffFile", diffFile);
-                requestBody.put("fileInfo", fileInfoJson);
+                requestBody.put("fileInfo", fileInfoJson); // 使用JSON字符串，与callReviewAPI保持一致
                 
                 String requestBodyJson = gson.toJson(requestBody);
                 
