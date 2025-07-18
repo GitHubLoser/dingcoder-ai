@@ -203,30 +203,30 @@ public final class MQTTService {
      * @param functionType 功能类型 (FUNCTION_CODE_GENERATION 或 FUNCTION_CODE_REVIEW)
      * @param callback 回调函数
      */
-    public void setMessageCallback(String functionType, Consumer<String> callback) {
-        synchronized (messageLock) {
-            topicCallbacks.put(functionType, callback);
-            
-            // 如果有缓存的消息，立即处理
-            if (callback != null && !pendingMessages.isEmpty()) {
-                LOG.info("回调函数已设置，处理 " + pendingMessages.size() + " 条缓存消息");
-                List<String> messages = new ArrayList<>(pendingMessages);
-                pendingMessages.clear();
-                
-                // 在EDT线程中处理所有缓存消息
-                com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
-                    for (String cachedMessage : messages) {
-                        try {
-                            LOG.info("处理缓存消息: " + cachedMessage);
-                            callback.accept(cachedMessage);
-                        } catch (Exception e) {
-                            LOG.error("处理缓存消息时出错", e);
-                        }
+            public void setMessageCallback(String functionType, Consumer<String> callback) {
+                synchronized (messageLock) {
+                    topicCallbacks.put(functionType, callback);
+
+                    // 如果有缓存的消息，立即处理
+                    if (callback != null && !pendingMessages.isEmpty()) {
+                        LOG.info("回调函数已设置，处理 " + pendingMessages.size() + " 条缓存消息");
+                        List<String> messages = new ArrayList<>(pendingMessages);
+                        pendingMessages.clear();
+
+                        // 在EDT线程中处理所有缓存消息
+                        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
+                            for (String cachedMessage : messages) {
+                                try {
+                                    LOG.info("处理缓存消息: " + cachedMessage);
+                                    callback.accept(cachedMessage);
+                                } catch (Exception e) {
+                                    LOG.error("处理缓存消息时出错", e);
+                                }
+                            }
+                        });
                     }
-                });
+                }
             }
-        }
-    }
 
     /**
      * 设置代码生成消息回调函数（向后兼容）

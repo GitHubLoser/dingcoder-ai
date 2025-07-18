@@ -115,10 +115,14 @@ public final class ReviewService {
             try {
                 callReviewAPI(fileItems);
                 LOG.info("代码审查请求已发送，不等待返回值");
-                // 不调用callback，保持评审结果区域不变
+                // 成功时不调用callback，保持评审结果区域不变
             } catch (Exception e) {
                 LOG.error("代码审查API调用失败", e);
-                // 不调用callback，保持评审结果区域不变
+                // 失败时调用callback通知UI层重置按钮状态
+                if (callback != null) {
+                    String errorMessage = getErrorMessage(e);
+                    callback.accept("❌ 代码审查请求失败：" + errorMessage);
+                }
             }
         }).start();
     }
@@ -152,10 +156,14 @@ public final class ReviewService {
                 List<ReviewFileItem> changedFiles = parseChangedFilesFromDiff(diffContent);
                 callReviewChangesAPI(diffContent, changedFiles);
                 LOG.info("代码变更审查请求已发送，不等待返回值");
-                // 不调用callback，保持评审结果区域不变
+                // 成功时不调用callback，保持评审结果区域不变
             } catch (Exception e) {
                 LOG.error("代码变更审查API调用失败", e);
-                // 不调用callback，保持评审结果区域不变
+                // 失败时调用callback通知UI层重置按钮状态
+                if (callback != null) {
+                    String errorMessage = getErrorMessage(e);
+                    callback.accept("❌ 代码变更审查请求失败：" + errorMessage);
+                }
             }
         }).start();
     }
@@ -254,10 +262,50 @@ public final class ReviewService {
             javax.net.ssl.HttpsURLConnection.setDefaultSSLSocketFactory(sslContext.getSocketFactory());
             javax.net.ssl.HttpsURLConnection.setDefaultHostnameVerifier((hostname, session) -> true);
 
-            org.springframework.http.client.SimpleClientHttpRequestFactory requestFactory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
-            return new RestTemplate(requestFactory);
+            // 使用HttpComponentsClientHttpRequestFactory提供更好的连接池管理和超时控制
+            try {
+                // 创建SSL连接工厂
+                org.apache.http.conn.ssl.SSLConnectionSocketFactory sslSocketFactory = 
+                    new org.apache.http.conn.ssl.SSLConnectionSocketFactory(sslContext, 
+                        new String[]{"TLSv1.2", "TLSv1.1", "TLSv1"}, 
+                        null, 
+                        org.apache.http.conn.ssl.NoopHostnameVerifier.INSTANCE);
+
+                // 创建连接池管理器
+                org.apache.http.impl.conn.PoolingHttpClientConnectionManager connectionManager = 
+                    new org.apache.http.impl.conn.PoolingHttpClientConnectionManager();
+                connectionManager.setMaxTotal(20); // 最大连接数
+                connectionManager.setDefaultMaxPerRoute(10); // 每个路由最大连接数
+
+                // 创建HTTP客户端
+                org.apache.http.impl.client.CloseableHttpClient httpClient = 
+                    org.apache.http.impl.client.HttpClients.custom()
+                        .setSSLSocketFactory(sslSocketFactory)
+                        .setConnectionManager(connectionManager)
+                        .setConnectionManagerShared(true)
+                        .build();
+
+                // 创建请求工厂
+                org.springframework.http.client.HttpComponentsClientHttpRequestFactory requestFactory = 
+                    new org.springframework.http.client.HttpComponentsClientHttpRequestFactory(httpClient);
+                
+                // 设置超时时间
+                requestFactory.setConnectTimeout(30000); // 连接超时30秒
+                requestFactory.setReadTimeout(60000); // 读取超时60秒
+                
+                return new RestTemplate(requestFactory);
+            } catch (Exception httpComponentsException) {
+                LOG.warn("HttpComponents不可用，回退到SimpleClientHttpRequestFactory", httpComponentsException);
+                // 回退到SimpleClientHttpRequestFactory
+                org.springframework.http.client.SimpleClientHttpRequestFactory fallbackFactory = 
+                    new org.springframework.http.client.SimpleClientHttpRequestFactory();
+                fallbackFactory.setConnectTimeout(30000);
+                fallbackFactory.setReadTimeout(60000);
+                return new RestTemplate(fallbackFactory);
+            }
         } catch (Exception e) {
-            throw new RuntimeException(e);
+            LOG.error("创建RestTemplate失败", e);
+            throw new RuntimeException("无法创建HTTP客户端", e);
         }
     }
 
@@ -268,144 +316,232 @@ public final class ReviewService {
         LOG.info("=== 开始调用代码审查API ===");
         LOG.info("API URL: " + REVIEW_API_URL);
         
-        try {
-            RestTemplate restTemplate = createUnsafeRestTemplate();
-            
-            // 设置请求头 - 改为JSON格式
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            LOG.info("设置Content-Type: " + MediaType.APPLICATION_JSON);
-            
-            // 添加token
-            String token = authService.getToken();
-            if (token != null) {
-                headers.add("token", token);
-                LOG.info("已添加token到请求头: " + token.substring(0, Math.min(20, token.length())) + "...");
-            } else {
-                LOG.warn("未获取到有效token");
-            }
-            
-            LOG.info("=== 开始构建JSON请求体 ===");
-            
-            // 构建DWFile数组
-            List<DWFile> dwFiles = new ArrayList<>();
-            LOG.info("=== 创建DWFile对象数组 ===");
-            for (int i = 0; i < fileItems.size(); i++) {
-                ReviewFileItem item = fileItems.get(i);
-                LOG.info("处理文件 " + (i + 1) + "/" + fileItems.size() + ":");
-                LOG.info("  - 文件名: " + item.getFileName());
-                LOG.info("  - 文件路径: " + item.getFilePath());
-                LOG.info("  - 内容大小: " + item.getContent().length() + " 字符");
-                
-                // 将文件内容转换为字节数组
-                byte[] fileBytes = item.getContent().getBytes("UTF-8");
-                LOG.info("  - 内容字节大小: " + fileBytes.length + " bytes");
-                
-                // 创建DWFile对象
-                DWFile dwFile = new DWFile(item.getFileName(), fileBytes);
-                dwFiles.add(dwFile);
-                
-                LOG.info("  ✅ 已创建DWFile对象: " + item.getFileName());
-                LOG.info("  - DWFile.fileName: " + dwFile.getFileName());
-                LOG.info("  - DWFile.fileByteArray长度: " + dwFile.getFileByteArray().length + " bytes");
-                
-                // 显示文件内容预览
-                if (item.getContent() != null && !item.getContent().isEmpty()) {
-                    String[] lines = item.getContent().split("\n");
-                    int showLines = Math.min(3, lines.length);
-                    StringBuilder preview = new StringBuilder();
-                    for (int j = 0; j < showLines; j++) {
-                        preview.append("    行").append(j + 1).append(": ").append(lines[j]).append("\n");
-                    }
-                    if (lines.length > 3) {
-                        preview.append("    ... (共").append(lines.length).append("行)");
-                    }
-                    LOG.info("  - 文件内容预览:\n" + preview.toString());
-                } else {
-                    LOG.warn("  ⚠️ 文件内容为空: " + item.getFileName());
+        // 重试机制
+        int maxRetries = 3;
+        int retryCount = 0;
+        Exception lastException = null;
+        
+        while (retryCount < maxRetries) {
+            try {
+                if (retryCount > 0) {
+                    LOG.info("=== 第 " + (retryCount + 1) + " 次重试调用代码审查API ===");
+                    // 重试前等待一段时间
+                    Thread.sleep(1000 * retryCount);
                 }
-                LOG.info("  ----------------------------------------");
-            }
-            LOG.info("=== DWFile数组构建完成，共创建了 " + dwFiles.size() + " 个文件对象 ===");
-            
-            // 构建fileInfo参数
-            List<Map<String, Object>> fileInfoList = new ArrayList<>();
-            for (ReviewFileItem item : fileItems) {
-                Map<String, Object> fileInfo = new HashMap<>();
-                fileInfo.put("fileName", item.getFileName());
-                fileInfo.put("filePath", item.getFilePath());
                 
-                // 如果是代码片段，添加行范围
-                if (item.getStartLine() != null && item.getEndLine() != null) {
-                    fileInfo.put("line", item.getStartLine() + "-" + item.getEndLine());
-                    LOG.info("文件 " + item.getFileName() + " 包含行范围: " + item.getStartLine() + "-" + item.getEndLine());
+                RestTemplate restTemplate = createUnsafeRestTemplate();
+                
+                // 设置请求头 - 改为JSON格式
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.APPLICATION_JSON);
+                LOG.info("设置Content-Type: " + MediaType.APPLICATION_JSON);
+                
+                // 添加token
+                String token = authService.getToken();
+                if (token != null) {
+                    headers.add("token", token);
+                    LOG.info("已添加token到请求头: " + token.substring(0, Math.min(20, token.length())) + "...");
                 } else {
-                    LOG.info("文件 " + item.getFileName() + " 是完整文件");
+                    LOG.warn("未获取到有效token");
                 }
-                fileInfoList.add(fileInfo);
+                
+                LOG.info("=== 开始构建JSON请求体 ===");
+                
+                // 构建DWFile数组
+                List<DWFile> dwFiles = new ArrayList<>();
+                LOG.info("=== 创建DWFile对象数组 ===");
+                for (int i = 0; i < fileItems.size(); i++) {
+                    ReviewFileItem item = fileItems.get(i);
+                    LOG.info("处理文件 " + (i + 1) + "/" + fileItems.size() + ":");
+                    LOG.info("  - 文件名: " + item.getFileName());
+                    LOG.info("  - 文件路径: " + item.getFilePath());
+                    LOG.info("  - 内容大小: " + item.getContent().length() + " 字符");
+                    
+                    // 将文件内容转换为字节数组
+                    byte[] fileBytes = item.getContent().getBytes("UTF-8");
+                    LOG.info("  - 内容字节大小: " + fileBytes.length + " bytes");
+                    
+                    // 创建DWFile对象
+                    DWFile dwFile = new DWFile(item.getFileName(), fileBytes);
+                    dwFiles.add(dwFile);
+                    
+                    LOG.info("  ✅ 已创建DWFile对象: " + item.getFileName());
+                    LOG.info("  - DWFile.fileName: " + dwFile.getFileName());
+                    LOG.info("  - DWFile.fileByteArray长度: " + dwFile.getFileByteArray().length + " bytes");
+                    
+                    // 显示文件内容预览
+                    if (item.getContent() != null && !item.getContent().isEmpty()) {
+                        String[] lines = item.getContent().split("\n");
+                        int showLines = Math.min(3, lines.length);
+                        StringBuilder preview = new StringBuilder();
+                        for (int j = 0; j < showLines; j++) {
+                            preview.append("    行").append(j + 1).append(": ").append(lines[j]).append("\n");
+                        }
+                        if (lines.length > 3) {
+                            preview.append("    ... (共").append(lines.length).append("行)");
+                        }
+                        LOG.info("  - 文件内容预览:\n" + preview.toString());
+                    } else {
+                        LOG.warn("  ⚠️ 文件内容为空: " + item.getFileName());
+                    }
+                    LOG.info("  ----------------------------------------");
+                }
+                LOG.info("=== DWFile数组构建完成，共创建了 " + dwFiles.size() + " 个文件对象 ===");
+                
+                // 构建fileInfo参数
+                List<Map<String, Object>> fileInfoList = new ArrayList<>();
+                for (ReviewFileItem item : fileItems) {
+                    Map<String, Object> fileInfo = new HashMap<>();
+                    fileInfo.put("fileName", item.getFileName());
+                    fileInfo.put("filePath", item.getFilePath());
+                    
+                    // 如果是代码片段，添加行范围
+                    if (item.getStartLine() != null && item.getEndLine() != null) {
+                        fileInfo.put("line", item.getStartLine() + "-" + item.getEndLine());
+                        LOG.info("文件 " + item.getFileName() + " 包含行范围: " + item.getStartLine() + "-" + item.getEndLine());
+                    } else {
+                        LOG.info("文件 " + item.getFileName() + " 是完整文件");
+                    }
+                    fileInfoList.add(fileInfo);
+                }
+                
+                String fileInfoJson = gson.toJson(fileInfoList);
+                LOG.info("=== fileInfo参数构建完成 ===");
+                LOG.info("fileInfo JSON内容: " + fileInfoJson);
+                LOG.info("fileInfo JSON长度: " + fileInfoJson.length() + " 字符");
+                
+                // 构建完整的请求体
+                Map<String, Object> requestBody = new HashMap<>();
+                requestBody.put("files", dwFiles);
+                requestBody.put("fileInfo", fileInfoJson);
+                
+                String requestBodyJson = gson.toJson(requestBody);
+                
+                LOG.info("=== JSON请求体构建完成 ===");
+                LOG.info("请求体包含参数:");
+                LOG.info("  - files: DWFile数组 (共" + dwFiles.size() + "个文件)");
+                LOG.info("  - fileInfo: JSON字符串");
+                
+                // 显示每个文件的详细信息
+                for (int i = 0; i < dwFiles.size(); i++) {
+                    DWFile dwFile = dwFiles.get(i);
+                    LOG.info("    文件[" + i + "]: " + dwFile.getFileName() + 
+                            " (字节数: " + dwFile.getFileByteArray().length + ")");
+                }
+                
+                LOG.info("请求体JSON长度: " + requestBodyJson.length() + " 字符");
+                LOG.info("请求体JSON预览: " + requestBodyJson.substring(0, Math.min(200, requestBodyJson.length())) + "...");
+                
+                LOG.info("=== 准备发送JSON请求 ===");
+                LOG.info("Content-Type: application/json");
+                LOG.info("传输方式: JSON格式，文件内容转为byte[]数组");
+                
+                // 创建请求实体
+                HttpEntity<String> requestEntity = new HttpEntity<>(requestBodyJson, headers);
+                LOG.info("JSON请求实体创建完成");
+                
+                // 发送请求
+                LOG.info("开始发送HTTP请求...");
+                long startTime = System.currentTimeMillis();
+                ResponseEntity<String> response = restTemplate.postForEntity(REVIEW_API_URL, requestEntity, String.class);
+                long endTime = System.currentTimeMillis();
+                
+                LOG.info("=== API调用完成 ===");
+                LOG.info("请求耗时: " + (endTime - startTime) + "ms");
+                LOG.info("响应状态码: " + response.getStatusCode());
+                LOG.info("响应头: " + response.getHeaders());
+                LOG.info("响应内容长度: " + (response.getBody() != null ? response.getBody().length() : 0));
+                LOG.info("响应内容: " + response.getBody());
+                
+                if (response.getStatusCode() == HttpStatus.OK) {
+                    LOG.info("代码审查请求发送成功");
+                    return; // 成功，退出重试循环
+                } else {
+                    LOG.warn("API返回非200状态码: " + response.getStatusCode());
+                    throw new RuntimeException("API调用失败：状态码 " + response.getStatusCode());
+                }
+                
+            } catch (Exception e) {
+                lastException = e;
+                retryCount++;
+                
+                LOG.error("=== 第 " + retryCount + " 次调用代码审查API时发生异常 ===");
+                LOG.error("异常类型: " + e.getClass().getSimpleName());
+                LOG.error("异常消息: " + e.getMessage());
+                
+                // 判断是否是可重试的异常
+                boolean isRetryable = isRetryableException(e);
+                if (!isRetryable) {
+                    LOG.error("遇到不可重试的异常，停止重试");
+                    break;
+                }
+                
+                if (retryCount >= maxRetries) {
+                    LOG.error("已达到最大重试次数 " + maxRetries + "，停止重试");
+                    break;
+                }
+                
+                LOG.info("将在 " + retryCount + " 秒后进行第 " + (retryCount + 1) + " 次重试");
             }
-            
-            String fileInfoJson = gson.toJson(fileInfoList);
-            LOG.info("=== fileInfo参数构建完成 ===");
-            LOG.info("fileInfo JSON内容: " + fileInfoJson);
-            LOG.info("fileInfo JSON长度: " + fileInfoJson.length() + " 字符");
-            
-            // 构建完整的请求体
-            Map<String, Object> requestBody = new HashMap<>();
-            requestBody.put("files", dwFiles);
-            requestBody.put("fileInfo", fileInfoJson);
-            
-            String requestBodyJson = gson.toJson(requestBody);
-            
-            LOG.info("=== JSON请求体构建完成 ===");
-            LOG.info("请求体包含参数:");
-            LOG.info("  - files: DWFile数组 (共" + dwFiles.size() + "个文件)");
-            LOG.info("  - fileInfo: JSON字符串");
-            
-            // 显示每个文件的详细信息
-            for (int i = 0; i < dwFiles.size(); i++) {
-                DWFile dwFile = dwFiles.get(i);
-                LOG.info("    文件[" + i + "]: " + dwFile.getFileName() + 
-                        " (字节数: " + dwFile.getFileByteArray().length + ")");
-            }
-            
-            LOG.info("请求体JSON长度: " + requestBodyJson.length() + " 字符");
-            LOG.info("请求体JSON预览: " + requestBodyJson.substring(0, Math.min(200, requestBodyJson.length())) + "...");
-            
-            LOG.info("=== 准备发送JSON请求 ===");
-            LOG.info("Content-Type: application/json");
-            LOG.info("传输方式: JSON格式，文件内容转为byte[]数组");
-            
-            // 创建请求实体
-            HttpEntity<String> requestEntity = new HttpEntity<>(requestBodyJson, headers);
-            LOG.info("JSON请求实体创建完成");
-            
-            // 发送请求
-            LOG.info("开始发送HTTP请求...");
-            long startTime = System.currentTimeMillis();
-            ResponseEntity<String> response = restTemplate.postForEntity(REVIEW_API_URL, requestEntity, String.class);
-            long endTime = System.currentTimeMillis();
-            
-            LOG.info("=== API调用完成 ===");
-            LOG.info("请求耗时: " + (endTime - startTime) + "ms");
-            LOG.info("响应状态码: " + response.getStatusCode());
-            LOG.info("响应头: " + response.getHeaders());
-            LOG.info("响应内容长度: " + (response.getBody() != null ? response.getBody().length() : 0));
-            LOG.info("响应内容: " + response.getBody());
-            
-            if (response.getStatusCode() == HttpStatus.OK) {
-                LOG.info("代码审查请求发送成功");
-            } else {
-                LOG.warn("API返回非200状态码: " + response.getStatusCode());
-                throw new RuntimeException("API调用失败：状态码 " + response.getStatusCode());
-            }
-            
-        } catch (Exception e) {
-            LOG.error("=== 调用代码审查API时发生异常 ===");
-            LOG.error("异常类型: " + e.getClass().getSimpleName());
-            LOG.error("异常消息: " + e.getMessage());
-            LOG.error("异常堆栈:", e);
-            throw new RuntimeException("API调用异常：" + e.getMessage(), e);
+        }
+        
+        // 所有重试都失败了
+        LOG.error("=== 代码审查API调用最终失败 ===");
+        LOG.error("重试次数: " + retryCount);
+        LOG.error("最后异常: " + (lastException != null ? lastException.getMessage() : "未知异常"));
+        
+        if (lastException != null) {
+            String errorMessage = getErrorMessage(lastException);
+            throw new RuntimeException("代码审查请求失败：" + errorMessage, lastException);
+        } else {
+            throw new RuntimeException("代码审查请求失败：未知错误");
+        }
+    }
+    
+    /**
+     * 判断异常是否可重试
+     */
+    private boolean isRetryableException(Exception e) {
+        String message = e.getMessage();
+        if (message == null) {
+            return false;
+        }
+        
+        // 可重试的网络异常
+        return message.contains("Connection reset") ||
+               message.contains("Connection refused") ||
+               message.contains("Connection timeout") ||
+               message.contains("Read timeout") ||
+               message.contains("Connect timeout") ||
+               message.contains("Socket timeout") ||
+               message.contains("No route to host") ||
+               message.contains("Network is unreachable") ||
+               e instanceof java.net.SocketException ||
+               e instanceof java.net.ConnectException ||
+               e instanceof org.springframework.web.client.ResourceAccessException;
+    }
+    
+    /**
+     * 获取用户友好的错误消息
+     */
+    private String getErrorMessage(Exception e) {
+        String message = e.getMessage();
+        if (message == null) {
+            return "网络连接异常";
+        }
+        
+        if (message.contains("Connection reset")) {
+            return "网络连接被重置，请检查网络连接或稍后重试";
+        } else if (message.contains("Connection timeout") || message.contains("Connect timeout")) {
+            return "连接超时，请检查网络连接";
+        } else if (message.contains("Read timeout")) {
+            return "请求超时，服务器响应时间过长";
+        } else if (message.contains("Connection refused")) {
+            return "连接被拒绝，服务器可能暂时不可用";
+        } else if (message.contains("No route to host")) {
+            return "无法连接到服务器，请检查网络设置";
+        } else {
+            return "网络请求失败：" + message;
         }
     }
     
@@ -416,139 +552,180 @@ public final class ReviewService {
         LOG.info("=== 开始调用代码变更审查API ===");
         LOG.info("API URL: " + REVIEW_API_URL);
         
-        try {
-            RestTemplate restTemplate = createUnsafeRestTemplate();
-            
-            // 设置请求头 - 改为JSON格式
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            LOG.info("设置Content-Type: " + MediaType.APPLICATION_JSON);
-            
-            // 添加token
-            String token = authService.getToken();
-            if (token != null) {
-                headers.add("token", token);
-                LOG.info("已添加token到请求头: " + token.substring(0, Math.min(20, token.length())) + "...");
-            } else {
-                LOG.warn("未获取到有效token");
-            }
-            
-            LOG.info("=== 开始构建JSON请求体 ===");
-            
-            // 构建DWFile数组（变更文件）
-            List<DWFile> dwFiles = new ArrayList<>();
-            LOG.info("=== 创建变更文件DWFile对象数组 ===");
-            for (int i = 0; i < changedFiles.size(); i++) {
-                ReviewFileItem item = changedFiles.get(i);
-                LOG.info("处理变更文件 " + (i + 1) + "/" + changedFiles.size() + ":");
-                LOG.info("  - 文件名: " + item.getFileName());
-                LOG.info("  - 文件路径: " + item.getFilePath());
-                LOG.info("  - 内容大小: " + item.getContent().length() + " 字符");
+        // 重试机制
+        int maxRetries = 3;
+        int retryCount = 0;
+        Exception lastException = null;
+        
+        while (retryCount < maxRetries) {
+            try {
+                if (retryCount > 0) {
+                    LOG.info("=== 第 " + (retryCount + 1) + " 次重试调用代码变更审查API ===");
+                    // 重试前等待一段时间
+                    Thread.sleep(1000 * retryCount);
+                }
                 
-                // 将文件内容转换为字节数组
-                byte[] fileBytes = item.getContent().getBytes("UTF-8");
-                LOG.info("  - 内容字节大小: " + fileBytes.length + " bytes");
+                RestTemplate restTemplate = createUnsafeRestTemplate();
                 
-                // 创建DWFile对象
-                DWFile dwFile = new DWFile(item.getFileName(), fileBytes);
-                dwFiles.add(dwFile);
+                // 设置请求头 - 改为JSON格式
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.APPLICATION_JSON);
+                LOG.info("设置Content-Type: " + MediaType.APPLICATION_JSON);
                 
-                LOG.info("  ✅ 已创建变更文件DWFile对象: " + item.getFileName());
-                LOG.info("  - DWFile.fileName: " + dwFile.getFileName());
-                LOG.info("  - DWFile.fileByteArray长度: " + dwFile.getFileByteArray().length + " bytes");
-                LOG.info("  ----------------------------------------");
+                // 添加token
+                String token = authService.getToken();
+                if (token != null) {
+                    headers.add("token", token);
+                    LOG.info("已添加token到请求头: " + token.substring(0, Math.min(20, token.length())) + "...");
+                } else {
+                    LOG.warn("未获取到有效token");
+                }
+                
+                LOG.info("=== 开始构建JSON请求体 ===");
+                
+                // 构建DWFile数组（变更文件）
+                List<DWFile> dwFiles = new ArrayList<>();
+                LOG.info("=== 创建变更文件DWFile对象数组 ===");
+                for (int i = 0; i < changedFiles.size(); i++) {
+                    ReviewFileItem item = changedFiles.get(i);
+                    LOG.info("处理变更文件 " + (i + 1) + "/" + changedFiles.size() + ":");
+                    LOG.info("  - 文件名: " + item.getFileName());
+                    LOG.info("  - 文件路径: " + item.getFilePath());
+                    LOG.info("  - 内容大小: " + item.getContent().length() + " 字符");
+                    
+                    // 将文件内容转换为字节数组
+                    byte[] fileBytes = item.getContent().getBytes("UTF-8");
+                    LOG.info("  - 内容字节大小: " + fileBytes.length + " bytes");
+                    
+                    // 创建DWFile对象
+                    DWFile dwFile = new DWFile(item.getFileName(), fileBytes);
+                    dwFiles.add(dwFile);
+                    
+                    LOG.info("  ✅ 已创建变更文件DWFile对象: " + item.getFileName());
+                    LOG.info("  - DWFile.fileName: " + dwFile.getFileName());
+                    LOG.info("  - DWFile.fileByteArray长度: " + dwFile.getFileByteArray().length + " bytes");
+                    LOG.info("  ----------------------------------------");
+                }
+                LOG.info("=== 变更文件DWFile数组构建完成，共创建了 " + dwFiles.size() + " 个文件对象 ===");
+                
+                // 创建diffFile（diff文件的DWFile对象）
+                LOG.info("=== 创建diff文件DWFile对象 ===");
+                LOG.info("diff文件名: git_changes.txt");
+                LOG.info("diff内容大小: " + diffContent.length() + " 字符");
+                
+                byte[] diffBytes = diffContent.getBytes("UTF-8");
+                LOG.info("diff内容字节大小: " + diffBytes.length + " bytes");
+                
+                DWFile diffFile = new DWFile("git_changes.txt", diffBytes);
+                LOG.info("✅ 已创建diff文件DWFile对象");
+                LOG.info("  - DWFile.fileName: " + diffFile.getFileName());
+                LOG.info("  - DWFile.fileByteArray长度: " + diffFile.getFileByteArray().length + " bytes");
+                
+                // 构建fileInfo参数
+                List<Map<String, Object>> fileInfoList = new ArrayList<>();
+                for (ReviewFileItem item : changedFiles) {
+                    Map<String, Object> fileInfo = new HashMap<>();
+                    fileInfo.put("fileName", item.getFileName());
+                    fileInfo.put("filePath", item.getFilePath());
+                    fileInfoList.add(fileInfo);
+                }
+                
+                String fileInfoJson = gson.toJson(fileInfoList);
+                
+                LOG.info("=== fileInfo参数构建完成 ===");
+                LOG.info("fileInfo JSON内容: " + fileInfoJson);
+                LOG.info("fileInfo JSON长度: " + fileInfoJson.length() + " 字符");
+                LOG.info("diff内容前100字符预览: " + diffContent.substring(0, Math.min(100, diffContent.length())));
+                
+                // 构建完整的请求体
+                Map<String, Object> requestBody = new HashMap<>();
+                requestBody.put("files", dwFiles);
+                requestBody.put("diffFile", diffFile);
+                requestBody.put("fileInfo", fileInfoJson);
+                
+                String requestBodyJson = gson.toJson(requestBody);
+                
+                LOG.info("=== JSON请求体构建完成 ===");
+                LOG.info("请求体包含参数:");
+                LOG.info("  - files: DWFile数组 (共" + dwFiles.size() + "个变更文件)");
+                LOG.info("  - diffFile: DWFile对象 (diff文件)");
+                LOG.info("  - fileInfo: JSON字符串");
+                
+                // 显示每个文件的详细信息
+                for (int i = 0; i < dwFiles.size(); i++) {
+                    DWFile dwFile = dwFiles.get(i);
+                    LOG.info("    变更文件[" + i + "]: " + dwFile.getFileName() + 
+                            " (字节数: " + dwFile.getFileByteArray().length + ")");
+                }
+                LOG.info("    diff文件: " + diffFile.getFileName() + 
+                        " (字节数: " + diffFile.getFileByteArray().length + ")");
+                
+                LOG.info("请求体JSON长度: " + requestBodyJson.length() + " 字符");
+                LOG.info("请求体JSON预览: " + requestBodyJson.substring(0, Math.min(200, requestBodyJson.length())) + "...");
+                
+                LOG.info("=== 准备发送JSON变更审查请求 ===");
+                LOG.info("Content-Type: application/json");
+                LOG.info("传输方式: JSON格式，文件内容转为byte[]数组");
+                
+                // 创建请求实体
+                HttpEntity<String> requestEntity = new HttpEntity<>(requestBodyJson, headers);
+                LOG.info("JSON请求实体创建完成");
+                
+                // 发送请求
+                LOG.info("开始发送HTTP请求...");
+                long startTime = System.currentTimeMillis();
+                ResponseEntity<String> response = restTemplate.postForEntity(REVIEW_API_URL, requestEntity, String.class);
+                long endTime = System.currentTimeMillis();
+                
+                LOG.info("=== 变更审查API调用完成 ===");
+                LOG.info("请求耗时: " + (endTime - startTime) + "ms");
+                LOG.info("响应状态码: " + response.getStatusCode());
+                LOG.info("响应头: " + response.getHeaders());
+                LOG.info("响应内容长度: " + (response.getBody() != null ? response.getBody().length() : 0));
+                LOG.info("响应内容: " + response.getBody());
+                
+                if (response.getStatusCode() == HttpStatus.OK) {
+                    LOG.info("代码变更审查请求发送成功");
+                    return; // 成功，退出重试循环
+                } else {
+                    LOG.warn("API返回非200状态码: " + response.getStatusCode());
+                    throw new RuntimeException("API调用失败：状态码 " + response.getStatusCode());
+                }
+                
+            } catch (Exception e) {
+                lastException = e;
+                retryCount++;
+                
+                LOG.error("=== 第 " + retryCount + " 次调用代码变更审查API时发生异常 ===");
+                LOG.error("异常类型: " + e.getClass().getSimpleName());
+                LOG.error("异常消息: " + e.getMessage());
+                
+                // 判断是否是可重试的异常
+                boolean isRetryable = isRetryableException(e);
+                if (!isRetryable) {
+                    LOG.error("遇到不可重试的异常，停止重试");
+                    break;
+                }
+                
+                if (retryCount >= maxRetries) {
+                    LOG.error("已达到最大重试次数 " + maxRetries + "，停止重试");
+                    break;
+                }
+                
+                LOG.info("将在 " + retryCount + " 秒后进行第 " + (retryCount + 1) + " 次重试");
             }
-            LOG.info("=== 变更文件DWFile数组构建完成，共创建了 " + dwFiles.size() + " 个文件对象 ===");
-            
-            // 创建diffFile（diff文件的DWFile对象）
-            LOG.info("=== 创建diff文件DWFile对象 ===");
-            LOG.info("diff文件名: git_changes.txt");
-            LOG.info("diff内容大小: " + diffContent.length() + " 字符");
-            
-            byte[] diffBytes = diffContent.getBytes("UTF-8");
-            LOG.info("diff内容字节大小: " + diffBytes.length + " bytes");
-            
-            DWFile diffFile = new DWFile("git_changes.txt", diffBytes);
-            LOG.info("✅ 已创建diff文件DWFile对象");
-            LOG.info("  - DWFile.fileName: " + diffFile.getFileName());
-            LOG.info("  - DWFile.fileByteArray长度: " + diffFile.getFileByteArray().length + " bytes");
-            
-            // 构建fileInfo参数
-            List<Map<String, Object>> fileInfoList = new ArrayList<>();
-            for (ReviewFileItem item : changedFiles) {
-                Map<String, Object> fileInfo = new HashMap<>();
-                fileInfo.put("fileName", item.getFileName());
-                fileInfo.put("filePath", item.getFilePath());
-                fileInfoList.add(fileInfo);
-            }
-            
-            String fileInfoJson = gson.toJson(fileInfoList);
-            
-            LOG.info("=== fileInfo参数构建完成 ===");
-            LOG.info("fileInfo JSON内容: " + fileInfoJson);
-            LOG.info("fileInfo JSON长度: " + fileInfoJson.length() + " 字符");
-            LOG.info("diff内容前100字符预览: " + diffContent.substring(0, Math.min(100, diffContent.length())));
-            
-            // 构建完整的请求体
-            Map<String, Object> requestBody = new HashMap<>();
-            requestBody.put("files", dwFiles);
-            requestBody.put("diffFile", diffFile);
-            requestBody.put("fileInfo", fileInfoJson);
-            
-            String requestBodyJson = gson.toJson(requestBody);
-            
-            LOG.info("=== JSON请求体构建完成 ===");
-            LOG.info("请求体包含参数:");
-            LOG.info("  - files: DWFile数组 (共" + dwFiles.size() + "个变更文件)");
-            LOG.info("  - diffFile: DWFile对象 (diff文件)");
-            LOG.info("  - fileInfo: JSON字符串");
-            
-            // 显示每个文件的详细信息
-            for (int i = 0; i < dwFiles.size(); i++) {
-                DWFile dwFile = dwFiles.get(i);
-                LOG.info("    变更文件[" + i + "]: " + dwFile.getFileName() + 
-                        " (字节数: " + dwFile.getFileByteArray().length + ")");
-            }
-            LOG.info("    diff文件: " + diffFile.getFileName() + 
-                    " (字节数: " + diffFile.getFileByteArray().length + ")");
-            
-            LOG.info("请求体JSON长度: " + requestBodyJson.length() + " 字符");
-            LOG.info("请求体JSON预览: " + requestBodyJson.substring(0, Math.min(200, requestBodyJson.length())) + "...");
-            
-            LOG.info("=== 准备发送JSON变更审查请求 ===");
-            LOG.info("Content-Type: application/json");
-            LOG.info("传输方式: JSON格式，文件内容转为byte[]数组");
-            
-            // 创建请求实体
-            HttpEntity<String> requestEntity = new HttpEntity<>(requestBodyJson, headers);
-            LOG.info("JSON请求实体创建完成");
-            
-            // 发送请求
-            LOG.info("开始发送HTTP请求...");
-            long startTime = System.currentTimeMillis();
-            ResponseEntity<String> response = restTemplate.postForEntity(REVIEW_API_URL, requestEntity, String.class);
-            long endTime = System.currentTimeMillis();
-            
-            LOG.info("=== 变更审查API调用完成 ===");
-            LOG.info("请求耗时: " + (endTime - startTime) + "ms");
-            LOG.info("响应状态码: " + response.getStatusCode());
-            LOG.info("响应头: " + response.getHeaders());
-            LOG.info("响应内容长度: " + (response.getBody() != null ? response.getBody().length() : 0));
-            LOG.info("响应内容: " + response.getBody());
-            
-            if (response.getStatusCode() == HttpStatus.OK) {
-                LOG.info("代码变更审查请求发送成功");
-            } else {
-                LOG.warn("API返回非200状态码: " + response.getStatusCode());
-                throw new RuntimeException("API调用失败：状态码 " + response.getStatusCode());
-            }
-            
-        } catch (Exception e) {
-            LOG.error("=== 调用代码变更审查API时发生异常 ===");
-            LOG.error("异常类型: " + e.getClass().getSimpleName());
-            LOG.error("异常消息: " + e.getMessage());
-            LOG.error("异常堆栈:", e);
-            throw new RuntimeException("API调用异常：" + e.getMessage(), e);
+        }
+        
+        // 所有重试都失败了
+        LOG.error("=== 代码变更审查API调用最终失败 ===");
+        LOG.error("重试次数: " + retryCount);
+        LOG.error("最后异常: " + (lastException != null ? lastException.getMessage() : "未知异常"));
+        
+        if (lastException != null) {
+            String errorMessage = getErrorMessage(lastException);
+            throw new RuntimeException("代码变更审查请求失败：" + errorMessage, lastException);
+        } else {
+            throw new RuntimeException("代码变更审查请求失败：未知错误");
         }
     }
     
@@ -666,57 +843,6 @@ public final class ReviewService {
         return fullPath;
     }
 
-    /**
-     * 格式化审查结果为易读的文本
-     */
-    private String formatReviewResult(ReviewResult result) {
-        StringBuilder sb = new StringBuilder();
-        
-        sb.append("# AI代码审查结果\n\n");
-        
-        // 文件信息
-        sb.append("## 文件信息\n");
-        sb.append("- 文件名: ").append(result.getFileName()).append("\n");
-        sb.append("- 代码行数: ").append(result.getLineCount()).append("\n\n");
-        
-        // 评分信息
-        sb.append("## 代码质量评分\n");
-        sb.append("- 总体评分: ").append(result.getOverallScore()).append("/100\n");
-        sb.append("- 代码规范: ").append(result.getCodeStyleScore()).append("/100\n");
-        sb.append("- 可维护性: ").append(result.getMaintainabilityScore()).append("/100\n");
-        sb.append("- 复杂度: ").append(result.getComplexityScore()).append("/100\n\n");
-        
-        // 发现的问题
-        sb.append("## 发现的问题\n");
-        if (result.getIssues().isEmpty()) {
-            sb.append("未发现明显问题，代码质量良好。\n\n");
-        } else {
-            for (int i = 0; i < result.getIssues().size(); i++) {
-                ReviewResult.ReviewIssue issue = result.getIssues().get(i);
-                sb.append(i + 1).append(". **").append(issue.getType()).append("** (").append(issue.getSeverity()).append(")");
-                sb.append(" [行 ").append(issue.getLine()).append("]\n");
-                sb.append("   - 问题：").append(issue.getDescription()).append("\n");
-                sb.append("   - 建议：").append(issue.getSuggestion()).append("\n\n");
-            }
-        }
-        
-        // 改进建议
-        sb.append("## 改进建议\n");
-        if (result.getSuggestions().isEmpty()) {
-            sb.append("代码已经很好，没有特别的改进建议。\n\n");
-        } else {
-            for (int i = 0; i < result.getSuggestions().size(); i++) {
-                sb.append(i + 1).append(". ").append(result.getSuggestions().get(i)).append("\n");
-            }
-            sb.append("\n");
-        }
-        
-        // 详细分析
-        sb.append("## 详细分析\n");
-        sb.append(result.getDetailedAnalysis());
-        
-        return sb.toString();
-    }
 
     /**
      * 获取当前打开的文件
@@ -740,47 +866,4 @@ public final class ReviewService {
         }
     }
 
-    /**
-     * 获取模拟的审查结果 (将来会被实际的AI接口替换)
-     */
-    private String getMockReviewResult(String fileName, String content) {
-        // 简单的代码行数统计
-        int lineCount = content.split("\n").length;
-        
-        // 构建模拟结果
-        StringBuilder result = new StringBuilder();
-        result.append("# AI代码审查结果\n\n");
-        result.append("## 文件信息\n");
-        result.append("- 文件名: ").append(fileName).append("\n");
-        result.append("- 代码行数: ").append(lineCount).append("\n\n");
-        
-        result.append("## 代码质量评分\n");
-        result.append("- 总体评分: 85/100\n");
-        result.append("- 代码规范: 90/100\n");
-        result.append("- 可维护性: 80/100\n");
-        result.append("- 复杂度: 85/100\n\n");
-        
-        result.append("## 主要发现\n");
-        result.append("1. **良好实践**: 代码结构清晰，命名规范。\n");
-        result.append("2. **建议改进**: 可以考虑增加更多的注释来提高可读性。\n");
-        result.append("3. **潜在问题**: 部分方法可能需要增加错误处理机制。\n\n");
-        
-        result.append("## 详细分析\n");
-        result.append("这里是代码的详细分析内容，说明每个关键部分的优缺点以及改进建议...\n\n");
-        
-        // 添加一些更具体的模拟建议
-        result.append("### 设计模式应用\n");
-        result.append("- 考虑在适当的地方应用工厂模式或构建者模式\n");
-        result.append("- 单例模式的使用是否合理？检查线程安全性\n\n");
-        
-        result.append("### 性能考虑\n");
-        result.append("- 部分循环可以优化，避免不必要的对象创建\n");
-        result.append("- 检查是否有内存泄漏的可能性\n\n");
-        
-        result.append("### 测试覆盖\n");
-        result.append("- 建议增加单元测试覆盖关键业务逻辑\n");
-        result.append("- 考虑添加集成测试验证组件交互\n\n");
-        
-        return result.toString();
-    }
 } 

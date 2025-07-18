@@ -367,6 +367,19 @@ public final class AuthService {
                     if (mqttService.isConnected()) {
                         log.info("MQTT连接启动成功");
                         connected = true;
+                        
+                        // 通知UI线程重新设置代码审查回调
+                        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
+                            try {
+                                com.codereview.plugin.ui.CodeReviewPanel codeReviewPanel = com.codereview.plugin.ui.CodeReviewPanel.getInstance();
+                                if (codeReviewPanel != null) {
+                                    log.info("通知CodeReviewPanel重新设置MQTT回调");
+                                    codeReviewPanel.ensureCodeReviewMqttCallback();
+                                }
+                            } catch (Exception e) {
+                                log.error("通知CodeReviewPanel设置回调时出错", e);
+                            }
+                        });
                     } else {
                         log.warn("MQTT连接未成功建立，将重试");
                         retryCount++;

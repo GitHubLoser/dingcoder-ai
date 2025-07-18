@@ -73,6 +73,7 @@ import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.awt.GridBagLayout;
 import java.awt.GridBagConstraints;
+import java.util.function.Consumer;
 
 /**
  * 代码审查面板，包含评审文件、评审变更、评审结果三个区域
@@ -331,6 +332,9 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         reviewChangesButton.setContentAreaFilled(reviewFileButton.isContentAreaFilled());
         reviewChangesButton.setOpaque(reviewFileButton.isOpaque());
         reviewChangesButton.addActionListener(e -> {
+            // 确保MQTT回调已正确设置
+            ensureCodeReviewMqttCallback();
+            
             LOG.info("正在获取Git变更并评审...");
             SwingUtilities.invokeLater(() -> {
                 try {
@@ -702,6 +706,9 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
     }
 
     private void onReviewFiles(ActionEvent e) {
+        // 确保MQTT回调已正确设置
+        ensureCodeReviewMqttCallback();
+        
         if (fileListModel.isEmpty() || (fileListModel.size() == 1 && fileListModel.get(0).isPlaceholder())) {
             // 只在状态栏显示错误，不显示在评审结果区域
             LOG.warn("没有要评审的文件");
@@ -754,19 +761,43 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             if (reviewItems.isEmpty()) {
                 // 只在状态栏显示错误，不显示在评审结果区域
                 LOG.warn("没有有效的文件可以评审");
+                // 重置按钮状态
+                resetReviewButtonState();
                 return;
             }
             
             LOG.info("准备评审 " + reviewItems.size() + " 个文件/代码片段");
             // 不显示任何消息，保持评审结果区域空白
             
-            // 调用新的评审服务
-            reviewService.reviewFiles(reviewItems, null);
+            // 调用新的评审服务，添加回调处理
+            reviewService.reviewFiles(reviewItems, errorMessage -> {
+                // 在UI线程中处理回调
+                SwingUtilities.invokeLater(() -> {
+                    if (errorMessage != null && errorMessage.startsWith("❌")) {
+                        // 显示错误消息
+                        showMessage(errorMessage);
+                        // 重置按钮状态
+                        resetReviewButtonState();
+                    }
+                });
+            });
             
         } catch (Exception ex) {
             LOG.error("准备评审文件时出错", ex);
             // 只在日志中记录错误，不显示在评审结果区域
             LOG.error("准备评审文件时出错：" + ex.getMessage());
+            // 重置按钮状态
+            resetReviewButtonState();
+        }
+    }
+    
+    /**
+     * 重置评审按钮状态
+     */
+    private void resetReviewButtonState() {
+        if (reviewFileButton != null) {
+            reviewFileButton.setEnabled(true);
+            reviewFileButton.setText("开始评审");
         }
     }
     
@@ -894,8 +925,16 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         // 不显示任何消息，保持评审结果区域空白
         LOG.info("正在评审代码变更，准备变更内容...");
         try {
-            // 调用评审变更服务
-            reviewService.reviewChanges(changes, null);
+            // 调用评审变更服务，添加回调处理
+            reviewService.reviewChanges(changes, errorMessage -> {
+                // 在UI线程中处理回调
+                SwingUtilities.invokeLater(() -> {
+                    if (errorMessage != null && errorMessage.startsWith("❌")) {
+                        // 显示错误消息
+                        showMessage(errorMessage);
+                    }
+                });
+            });
         } catch (Exception ex) {
             LOG.error("评审变更时出错", ex);
             // 只在日志中记录错误，不显示在评审结果区域
@@ -996,6 +1035,12 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         try {
             LOG.info("开始清空代码审查面板内容");
             
+            // 重置评审按钮状态
+            if (reviewFileButton != null) {
+                reviewFileButton.setEnabled(true);
+                reviewFileButton.setText("开始评审");
+            }
+            
             // 清空文件列表
             if (fileListModel != null) {
                 fileListModel.clear();
@@ -1068,7 +1113,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
     }
     
     /**
-     * 设置代码审查MQTT回调
+     * 设置代码审查MQTT回调函数
      */
     private void setCodeReviewMqttCallback() {
         try {
@@ -1103,6 +1148,29 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             }
         } catch (Exception e) {
             LOG.error("设置代码审查MQTT回调时出错", e);
+        }
+    }
+    
+    /**
+     * 确保代码审查MQTT回调已设置（供外部调用）
+     */
+    public void ensureCodeReviewMqttCallback() {
+        try {
+            MQTTService mqttService = MQTTService.getInstance();
+            if (mqttService != null && mqttService.isConnected()) {
+                Consumer<String> currentCallback = mqttService.getMessageCallback(MQTTService.FUNCTION_CODE_REVIEW);
+                if (currentCallback == null) {
+                    LOG.info("检测到代码审查回调未设置，重新设置");
+                    mqttService.setMessageCallback(MQTTService.FUNCTION_CODE_REVIEW, this::onCodeReviewMqttMessage);
+                    LOG.info("代码审查MQTT回调函数重新设置完成");
+                } else {
+                    LOG.info("代码审查MQTT回调函数已设置");
+                }
+            } else {
+                LOG.warn("MQTT服务未连接，无法设置代码审查回调");
+            }
+        } catch (Exception e) {
+            LOG.error("确保代码审查MQTT回调时出错", e);
         }
     }
     
@@ -2168,6 +2236,12 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         );
         
         if (result == 0) { // 选择"是"
+            // 重置评审按钮状态
+            if (reviewFileButton != null) {
+                reviewFileButton.setEnabled(true);
+                reviewFileButton.setText("开始评审");
+            }
+            
             // 清除评审文件区域
             fileListModel.clear();
             fileListModel.addElement(new ReviewFileItem("提示", "点击 + 按钮或右键菜单添加要评审的文件", 0, 0, true));
