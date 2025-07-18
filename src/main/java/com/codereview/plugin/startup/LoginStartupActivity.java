@@ -12,6 +12,8 @@ import org.jetbrains.annotations.NotNull;
 public class LoginStartupActivity implements StartupActivity {
     @Override
     public void runActivity(@NotNull Project project) {
+        // IDEA启动时自动登出
+        AuthService.getInstance().logout();
         // 不再自动弹出登录对话框
         // 用户可以通过界面上的登录按钮主动登录
         AuthService authService = AuthService.getInstance();
