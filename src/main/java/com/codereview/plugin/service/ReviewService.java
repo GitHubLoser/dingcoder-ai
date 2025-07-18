@@ -491,7 +491,6 @@ public final class ReviewService {
                             " (字节数: " + dwFile.getFileByteArray().length + ")");
                 }
                 
-                LOG.info("请求体JSON长度: " + requestBodyJson.length() + " 字符");
                 LOG.info("请求体JSON预览: " + requestBodyJson.substring(0, Math.min(200, requestBodyJson.length())) + "...");
                 
                 LOG.info("=== 准备发送JSON请求 ===");
@@ -692,19 +691,14 @@ public final class ReviewService {
                     fileInfoList.add(fileInfo);
                 }
                 
-                String fileInfoJson = gson.toJson(fileInfoList);
-                LOG.info("=== fileInfo参数构建完成 ===");
-                LOG.info("fileInfo JSON内容: " + fileInfoJson);
-                LOG.info("fileInfo JSON长度: " + fileInfoJson.length() + " 字符");
+                String fileInfoJson = gson.toJson(fileInfoList); // fileInfo必须是字符串
                 
-                // 构建完整的请求体
+                // 构建完整的请求体，严格按服务端签名
                 Map<String, Object> requestBody = new HashMap<>();
-                requestBody.put("files", dwFiles);
-                requestBody.put("diffFile", diffFile);
-                requestBody.put("fileInfo", fileInfoJson); // 使用JSON字符串，与callReviewAPI保持一致
-                
-                String requestBodyJson = gson.toJson(requestBody);
-                
+                requestBody.put("files", dwFiles); // DWFile[]
+                requestBody.put("diffFile", diffFile); // 单个DWFile对象
+                requestBody.put("fileInfo", fileInfoJson); // 字符串
+
                 LOG.info("====== 评审变更接口请求体 START ======");
                 LOG.info(PRETTY_GSON.toJson(requestBody));
                 if (requestBody.containsKey("diffFile")) {
@@ -713,6 +707,9 @@ public final class ReviewService {
                     LOG.info(PRETTY_GSON.toJson(diffFileObj));
                 }
                 LOG.info("====== 评审变更接口请求体 END ======");
+
+                // 直接用gson.toJson(requestBody)作为请求体字符串
+                HttpEntity<String> requestEntity = new HttpEntity<>(gson.toJson(requestBody), headers);
                 
                 LOG.info("=== JSON请求体构建完成 ===");
                 LOG.info("请求体包含参数:");
@@ -729,15 +726,13 @@ public final class ReviewService {
                 LOG.info("    diff文件: " + diffFile.getFileName() + 
                         " (字节数: " + diffFile.getFileByteArray().length + ")");
                 
-                LOG.info("请求体JSON长度: " + requestBodyJson.length() + " 字符");
-                LOG.info("请求体JSON预览: " + requestBodyJson.substring(0, Math.min(200, requestBodyJson.length())) + "...");
+                LOG.info("请求体JSON预览: " + gson.toJson(requestBody).substring(0, Math.min(200, gson.toJson(requestBody).length())) + "...");
                 
                 LOG.info("=== 准备发送JSON变更审查请求 ===");
                 LOG.info("Content-Type: application/json");
                 LOG.info("传输方式: JSON格式，文件内容转为byte[]数组");
                 
                 // 创建请求实体
-                HttpEntity<String> requestEntity = new HttpEntity<>(requestBodyJson, headers);
                 LOG.info("JSON请求实体创建完成");
                 
                 // 发送请求
