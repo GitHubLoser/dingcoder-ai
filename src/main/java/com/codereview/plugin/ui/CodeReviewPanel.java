@@ -334,7 +334,11 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         reviewChangesButton.addActionListener(e -> {
             // 确保MQTT回调已正确设置
             ensureCodeReviewMqttCallback();
-            
+
+            // 评审变更按钮变成评审中，禁用
+            reviewChangesButton.setEnabled(false);
+            reviewChangesButton.setText("评审中...");
+
             LOG.info("正在获取Git变更并评审...");
             SwingUtilities.invokeLater(() -> {
                 try {
@@ -350,6 +354,9 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                             "提示",
                             JOptionPane.INFORMATION_MESSAGE
                         );
+                        // 恢复按钮状态
+                        reviewChangesButton.setEnabled(true);
+                        reviewChangesButton.setText("评审变更");
                     }
                 } catch (Exception ex) {
                     JOptionPane.showMessageDialog(
@@ -359,6 +366,9 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                         JOptionPane.ERROR_MESSAGE
                     );
                     LOG.error("Failed to get git diff", ex);
+                    // 恢复按钮状态
+                    reviewChangesButton.setEnabled(true);
+                    reviewChangesButton.setText("评审变更");
                 }
             });
         });
@@ -1171,6 +1181,9 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                 if (message != null && message.contains("审查结束")) {
                     reviewFileButton.setEnabled(true);
                     reviewFileButton.setText("开始评审");
+                    // 恢复评审变更按钮状态
+                    reviewChangesButton.setEnabled(true);
+                    reviewChangesButton.setText("评审变更");
                     JOptionPane.showMessageDialog(this, "本次审查结束", "提示", JOptionPane.INFORMATION_MESSAGE);
                     return; // 直接返回，不展示在评审结果区域
                 }
