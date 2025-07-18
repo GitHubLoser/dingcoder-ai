@@ -1,6 +1,7 @@
 package com.codereview.plugin.auth;
 
 import com.codereview.plugin.ui.ChatToolWindowFactory;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.ui.ValidationInfo;
@@ -20,6 +21,7 @@ import java.util.Map;
  * 登录对话框
  */
 public class LoginDialog extends DialogWrapper {
+    private static final Logger LOG = Logger.getInstance(LoginDialog.class);
     private final JBTextField usernameField;
     private final JBPasswordField passwordField;
     private final AuthService authService;
@@ -95,6 +97,7 @@ public class LoginDialog extends DialogWrapper {
     protected void doOKAction() {
         String username = usernameField.getText().trim();
         String password = new String(passwordField.getPassword());
+        LOG.info("用户点击登录，用户名: " + username);
         
         // 清除之前的错误提示
         setErrorText(null);
@@ -108,18 +111,21 @@ public class LoginDialog extends DialogWrapper {
         // 使用后台线程进行登录，避免阻塞UI
         new Thread(() -> {
             try {
-                // 执行登录
+                LOG.info("开始调用authService.login");
                 authService.login(username, password);
+                LOG.info("authService.login调用完成，isLoggedIn=" + authService.isLoggedIn());
                 
                 SwingUtilities.invokeLater(() -> {
                     // 检查登录状态
                     if (authService.isLoggedIn()) {
+                        LOG.info("登录成功，关闭对话框");
                         // 登录成功 - 关闭对话框
                         dispose();
                         
                         // 更新主面板状态并显示成功消息
                         SwingUtilities.invokeLater(() -> {
                             ChatToolWindowFactory.updateCurrentPanelStatus();
+                            LOG.info("主面板状态已更新");
                             
                             // 显示成功消息
                             String successMessage = "登录成功！欢迎使用鼎码智辅";
@@ -131,11 +137,13 @@ public class LoginDialog extends DialogWrapper {
                             // );
                         });
                     } else {
+                        LOG.warn("登录失败，authService.isLoggedIn()=false");
                         // 登录失败 - 恢复UI状态
                         restoreUIAfterFailure("登录失败，请检查用户名和密码是否正确");
                     }
                 });
             } catch (Exception e) {
+                LOG.error("登录过程中发生异常", e);
                 SwingUtilities.invokeLater(() -> {
                     String errorMessage = "登录过程中发生错误：" + e.getMessage();
                     restoreUIAfterFailure(errorMessage);
@@ -148,6 +156,7 @@ public class LoginDialog extends DialogWrapper {
      * 登录失败后恢复UI状态
      */
     private void restoreUIAfterFailure(String errorMessage) {
+        LOG.warn("登录失败: " + errorMessage);
         // 恢复标题和按钮状态
         setTitle("登录到 DingCoder AI");
         setOKActionEnabled(true);

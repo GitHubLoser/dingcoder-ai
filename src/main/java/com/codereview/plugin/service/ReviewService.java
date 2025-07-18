@@ -37,7 +37,8 @@ public final class ReviewService {
     
     // API配置
     private static final String REVIEW_API_URL = "https://aide-at-test.apps.digiwincloud.com.cn/restful/standard/aide/submitReview";
-    
+//    private static final String REVIEW_API_URL = "http://192.168.6.15:8085/restful/standard/aide/submitReview";
+
     private final Project project;
     private final AIService aiService;
     private final AuthService authService;
@@ -653,35 +654,28 @@ public final class ReviewService {
                     LOG.info("  - 文件名: " + item.getFileName());
                     LOG.info("  - 文件路径: " + item.getFilePath());
                     LOG.info("  - 内容大小: " + item.getContent().length() + " 字符");
-                    
-                    // 将文件内容转换为字节数组
                     byte[] fileBytes = item.getContent().getBytes("UTF-8");
                     LOG.info("  - 内容字节大小: " + fileBytes.length + " bytes");
-                    
-                    // 创建DWFile对象
                     DWFile dwFile = new DWFile(item.getFileName(), fileBytes);
                     dwFiles.add(dwFile);
-                    
                     LOG.info("  ✅ 已创建变更文件DWFile对象: " + item.getFileName());
                     LOG.info("  - DWFile.fileName: " + dwFile.getFileName());
                     LOG.info("  - DWFile.fileByteArray长度: " + dwFile.getFileByteArray().length + " bytes");
                     LOG.info("  ----------------------------------------");
                 }
                 LOG.info("=== 变更文件DWFile数组构建完成，共创建了 " + dwFiles.size() + " 个文件对象 ===");
-                
+
                 // 创建diffFile（diff文件的DWFile对象）
                 LOG.info("=== 创建diff文件DWFile对象 ===");
                 LOG.info("diff文件名: git_changes.txt");
                 LOG.info("diff内容大小: " + diffContent.length() + " 字符");
-                
                 byte[] diffBytes = diffContent.getBytes("UTF-8");
                 LOG.info("diff内容字节大小: " + diffBytes.length + " bytes");
-                
                 DWFile diffFile = new DWFile("git_changes.txt", diffBytes);
                 LOG.info("✅ 已创建diff文件DWFile对象");
                 LOG.info("  - DWFile.fileName: " + diffFile.getFileName());
                 LOG.info("  - DWFile.fileByteArray长度: " + diffFile.getFileByteArray().length + " bytes");
-                
+
                 // 构建fileInfo参数
                 List<Map<String, Object>> fileInfoList = new ArrayList<>();
                 for (ReviewFileItem item : changedFiles) {
@@ -690,26 +684,28 @@ public final class ReviewService {
                     fileInfo.put("filePath", item.getFilePath());
                     fileInfoList.add(fileInfo);
                 }
-                
                 String fileInfoJson = gson.toJson(fileInfoList); // fileInfo必须是字符串
-                
-                // 构建完整的请求体，严格按服务端签名
+
+                // 构建完整的请求体，和开始评审完全一致
+                DWFile[] filesArray = dwFiles.toArray(new DWFile[0]);
                 Map<String, Object> requestBody = new HashMap<>();
-                requestBody.put("files", dwFiles); // DWFile[]
+                requestBody.put("files", filesArray); // DWFile[]
                 requestBody.put("diffFile", diffFile); // 单个DWFile对象
                 requestBody.put("fileInfo", fileInfoJson); // 字符串
 
+                String requestBodyJson = gson.toJson(requestBody);
+
                 LOG.info("====== 评审变更接口请求体 START ======");
-                LOG.info(PRETTY_GSON.toJson(requestBody));
+                LOG.info(requestBodyJson);
                 if (requestBody.containsKey("diffFile")) {
                     Object diffFileObj = requestBody.get("diffFile");
                     LOG.info("------ diffFile 对象内容 ------");
-                    LOG.info(PRETTY_GSON.toJson(diffFileObj));
+                    LOG.info(gson.toJson(diffFileObj));
                 }
                 LOG.info("====== 评审变更接口请求体 END ======");
 
-                // 直接用gson.toJson(requestBody)作为请求体字符串
-                HttpEntity<String> requestEntity = new HttpEntity<>(gson.toJson(requestBody), headers);
+                // 用和开始评审完全一致的方式创建请求实体
+                HttpEntity<String> requestEntity = new HttpEntity<>(requestBodyJson, headers);
                 
                 LOG.info("=== JSON请求体构建完成 ===");
                 LOG.info("请求体包含参数:");
