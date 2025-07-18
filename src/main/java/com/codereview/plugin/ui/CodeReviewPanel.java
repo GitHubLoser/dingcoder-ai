@@ -901,7 +901,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         return null;
     }
     
-        private void onReviewChangesInner(String changes) {
+    private void onReviewChangesInner(String changes) {
         if (changes.isEmpty() || changes.startsWith("点击") || changes.startsWith("没有检测到") || changes.startsWith("获取Git变更时出错")) {
             // 只在日志中记录错误，不显示在评审结果区域
             LOG.warn("没有可评审的变更");
@@ -915,8 +915,8 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                 // 在UI线程中处理回调
                 SwingUtilities.invokeLater(() -> {
                     if (errorMessage != null && errorMessage.startsWith("❌")) {
-                        // 显示错误消息
-                        showMessage(errorMessage);
+                        // 只在日志中记录错误，不显示在评审结果区域
+                        LOG.error("评审变更失败: " + errorMessage);
                     }
                 });
             });

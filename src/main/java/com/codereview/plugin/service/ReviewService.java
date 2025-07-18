@@ -17,6 +17,7 @@ import org.springframework.web.client.RestTemplate;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.gson.GsonBuilder;
 
 import java.io.IOException;
 import java.util.List;
@@ -704,6 +705,15 @@ public final class ReviewService {
                 
                 String requestBodyJson = gson.toJson(requestBody);
                 
+                LOG.info("====== 评审变更接口请求体 START ======");
+                LOG.info(PRETTY_GSON.toJson(requestBody));
+                if (requestBody.containsKey("diffFile")) {
+                    Object diffFileObj = requestBody.get("diffFile");
+                    LOG.info("------ diffFile 对象内容 ------");
+                    LOG.info(PRETTY_GSON.toJson(diffFileObj));
+                }
+                LOG.info("====== 评审变更接口请求体 END ======");
+                
                 LOG.info("=== JSON请求体构建完成 ===");
                 LOG.info("请求体包含参数:");
                 LOG.info("  - files: DWFile数组 (共" + dwFiles.size() + "个变更文件)");
@@ -825,4 +835,6 @@ public final class ReviewService {
         }
     }
 
+    // 在类成员区添加
+    private static final Gson PRETTY_GSON = new GsonBuilder().setPrettyPrinting().create();
 } 
