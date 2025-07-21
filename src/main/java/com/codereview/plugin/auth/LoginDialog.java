@@ -16,6 +16,7 @@ import javax.swing.*;
 import java.awt.*;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.prefs.Preferences;
 
 /**
  * 登录对话框
@@ -25,6 +26,7 @@ public class LoginDialog extends DialogWrapper {
     private final JBTextField usernameField;
     private final JBPasswordField passwordField;
     private final AuthService authService;
+    private JCheckBox rememberPasswordCheckBox;
 
     public LoginDialog(@Nullable Project project) {
         super(project);
@@ -33,6 +35,17 @@ public class LoginDialog extends DialogWrapper {
         // 初始化用户名和密码输入框
         usernameField = new JBTextField(20);
         passwordField = new JBPasswordField();
+        rememberPasswordCheckBox = new JCheckBox("记住密码");
+        // 读取本地保存的用户名和密码
+        Preferences prefs = Preferences.userRoot().node("dingcoder-ai-login");
+        String savedUser = prefs.get("username", "");
+        String savedPass = prefs.get("password", "");
+        boolean remember = prefs.getBoolean("remember", false);
+        usernameField.setText(savedUser);
+        if (remember && !savedPass.isEmpty()) {
+            passwordField.setText(savedPass);
+            rememberPasswordCheckBox.setSelected(true);
+        }
         
         setTitle("登录到 鼎码智辅");
         setOKButtonText("登录");
@@ -67,9 +80,16 @@ public class LoginDialog extends DialogWrapper {
         gbc.weightx = 1.0;
         panel.add(passwordField, gbc);
         
+        // 记住密码复选框
+        gbc.gridx = 1;
+        gbc.gridy = 2;
+        gbc.weightx = 0.0;
+        gbc.anchor = GridBagConstraints.WEST;
+        panel.add(rememberPasswordCheckBox, gbc);
+        
         // 提示信息
         gbc.gridx = 0;
-        gbc.gridy = 2;
+        gbc.gridy = 3;
         gbc.gridwidth = 2;
         gbc.insets = new Insets(10, 5, 5, 5);
         JBLabel infoLabel = new JBLabel("注意: 使用 '邮箱/密码' 作为登录凭证");
@@ -97,6 +117,16 @@ public class LoginDialog extends DialogWrapper {
     protected void doOKAction() {
         String username = usernameField.getText().trim();
         String password = new String(passwordField.getPassword());
+        boolean remember = rememberPasswordCheckBox.isSelected();
+        // 保存用户名和密码到本地
+        Preferences prefs = Preferences.userRoot().node("dingcoder-ai-login");
+        prefs.put("username", username);
+        if (remember) {
+            prefs.put("password", password);
+        } else {
+            prefs.remove("password");
+        }
+        prefs.putBoolean("remember", remember);
         LOG.info("用户点击登录，用户名: " + username);
         
         // 清除之前的错误提示
