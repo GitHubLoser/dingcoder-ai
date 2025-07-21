@@ -369,7 +369,7 @@ public final class AuthService {
                         log.info("MQTT连接启动成功");
                         connected = true;
                         
-                        // 通知UI线程重新设置代码审查回调
+                        // 通知UI线程重新设置所有MQTT回调
                         com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
                             try {
                                 com.codereview.plugin.ui.CodeReviewPanel codeReviewPanel = com.codereview.plugin.ui.CodeReviewPanel.getInstance();
@@ -377,8 +377,14 @@ public final class AuthService {
                                     log.info("通知CodeReviewPanel重新设置MQTT回调");
                                     codeReviewPanel.ensureCodeReviewMqttCallback();
                                 }
+                                // 新增：通知ChatToolWindowPanel重新设置code_generation回调
+                                com.codereview.plugin.ui.ChatToolWindowPanel chatPanel = com.codereview.plugin.ui.ChatToolWindowPanel.getInstance();
+                                if (chatPanel != null) {
+                                    log.info("通知ChatToolWindowPanel重新设置MQTT回调");
+                                    chatPanel.ensureCodeGenerationMqttCallback();
+                                }
                             } catch (Exception e) {
-                                log.error("通知CodeReviewPanel设置回调时出错", e);
+                                log.error("通知UI设置回调时出错", e);
                             }
                         });
                     } else {

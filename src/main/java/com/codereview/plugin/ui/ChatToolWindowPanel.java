@@ -51,6 +51,12 @@ import com.intellij.ide.highlighter.JavaFileType;
 public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     private static final Logger LOG = Logger.getInstance(ChatToolWindowPanel.class);
     
+    private static ChatToolWindowPanel instance;
+
+    public static ChatToolWindowPanel getInstance() {
+        return instance;
+    }
+    
     private final Project project;
     private final AuthService authService;
     private final AIService aiService;
@@ -92,6 +98,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         this.aiService = AIService.getInstance();
         this.mqttService = MQTTService.getInstance();
         this.validateSpecService = new ValidateSpecService();
+        instance = this;
         
         LOG.info("创建ChatToolWindowPanel实例");
         
@@ -1024,6 +1031,22 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             LOG.info("代码生成MQTT回调函数设置完成");
         } else {
             LOG.error("MQTT服务实例为空，无法设置回调");
+        }
+    }
+    
+    // 新增方法：确保code_generation回调已注册
+    public void ensureCodeGenerationMqttCallback() {
+        if (mqttService != null && mqttService.isConnected()) {
+            Consumer<String> currentCallback = mqttService.getMessageCallback(MQTTService.FUNCTION_CODE_GENERATION);
+            if (currentCallback == null) {
+                LOG.info("检测到code_generation回调未设置，重新设置");
+                mqttService.setMessageCallback(MQTTService.FUNCTION_CODE_GENERATION, this::onMQTTMessage);
+                LOG.info("code_generation MQTT回调函数重新设置完成");
+            } else {
+                LOG.info("code_generation MQTT回调函数已设置");
+            }
+        } else {
+            LOG.warn("MQTT服务未连接，无法设置code_generation回调");
         }
     }
     
