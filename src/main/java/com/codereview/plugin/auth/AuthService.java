@@ -2,6 +2,7 @@ package com.codereview.plugin.auth;
 
 import com.codereview.plugin.constant.CommonConstant;
 import com.codereview.plugin.service.MQTTService;
+import com.codereview.plugin.service.ReviewService;
 import com.codereview.plugin.utils.AESUtils;
 import com.codereview.plugin.utils.RSAUtils;
 import com.intellij.openapi.components.Service;
@@ -112,7 +113,7 @@ public final class AuthService {
                 String aesKey = new String(RSAUtils.decryptByPrivateKey(Base64.decodeBase64(encryptAesKey), privateKey), StandardCharsets.UTF_8);
                 String passwordHash = AESUtils.aesEncryptByBase64(password, aesKey);
                 //6.登录
-                RestTemplate restTemplate = new RestTemplate();
+                RestTemplate restTemplate = ReviewService.createUnsafeRestTemplate();
                 HttpHeaders headers = new HttpHeaders();
                 headers.setContentType(MediaType.APPLICATION_JSON);
                 headers.add(CommonConstant.DIGI_MIDDLEWARE_AUTH_APP,iamApToken);
@@ -196,7 +197,7 @@ public final class AuthService {
             log.info("开始获取服务端公钥，URL: {}", uri);
 //            javax.swing.JOptionPane.showMessageDialog(null, "开始获取服务端公钥，URL: " + uri, "调试", javax.swing.JOptionPane.INFORMATION_MESSAGE);
             
-            RestTemplate restTemplate = new RestTemplate();
+            RestTemplate restTemplate = ReviewService.createUnsafeRestTemplate();
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             headers.add(CommonConstant.DIGI_MIDDLEWARE_AUTH_APP, iamApToken);
@@ -242,7 +243,7 @@ public final class AuthService {
         try {
 //            javax.swing.JOptionPane.showMessageDialog(null, "开始获取AES密钥，URL: " + uri, "调试", javax.swing.JOptionPane.INFORMATION_MESSAGE);
             
-            RestTemplate restTemplate = new RestTemplate();
+            RestTemplate restTemplate = ReviewService.createUnsafeRestTemplate();
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             headers.add(CommonConstant.DIGI_MIDDLEWARE_AUTH_APP, iamApToken);

@@ -313,7 +313,7 @@ public final class ReviewService {
     }
     
     // 新增：创建跳过SSL校验的RestTemplate
-    private static RestTemplate createUnsafeRestTemplate() {
+    public static RestTemplate createUnsafeRestTemplate() {
         try {
             SSLContext sslContext = SSLContext.getInstance("TLS");
             sslContext.init(null, new TrustManager[]{new javax.net.ssl.X509TrustManager() {
