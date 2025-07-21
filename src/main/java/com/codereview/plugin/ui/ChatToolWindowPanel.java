@@ -527,6 +527,30 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             titlePanel.add(toggleButton);
             titlePanel.add(Box.createHorizontalStrut(8));
             titlePanel.add(generateButton);
+
+            // 新增：点赞和点踩按钮
+            JButton likeButton = new JButton("👍");
+            likeButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 16));
+            likeButton.setFocusPainted(false);
+            likeButton.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
+            likeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            likeButton.setOpaque(true);
+            likeButton.setBackground(new JBColor(new Color(0xE6F7FF), new Color(0x2B2B2B)));
+            likeButton.addActionListener(e -> showFeedbackDialog("点赞反馈"));
+
+            JButton dislikeButton = new JButton("👎");
+            dislikeButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 16));
+            dislikeButton.setFocusPainted(false);
+            dislikeButton.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
+            dislikeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            dislikeButton.setOpaque(true);
+            dislikeButton.setBackground(new JBColor(new Color(0xFFF1F0), new Color(0x2B2B2B)));
+            dislikeButton.addActionListener(e -> showFeedbackDialog("点踩反馈"));
+
+            titlePanel.add(Box.createHorizontalStrut(8));
+            titlePanel.add(likeButton);
+            titlePanel.add(Box.createHorizontalStrut(4));
+            titlePanel.add(dislikeButton);
             titlePanel.add(Box.createHorizontalGlue());
 
             // 代码编辑器
@@ -1007,15 +1031,15 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                 chatPanel.removeAll();
             }
             
-            // 清理MQTT回调
-            try {
-                MQTTService mqttService = MQTTService.getInstance();
-                if (mqttService != null) {
-                    mqttService.setMessageCallback(MQTTService.FUNCTION_CODE_GENERATION, null);
-                }
-            } catch (Exception e) {
-                LOG.error("清理MQTT回调时出错", e);
-            }
+            // 不再清理MQTT回调
+            // try {
+            //     MQTTService mqttService = MQTTService.getInstance();
+            //     if (mqttService != null) {
+            //         mqttService.setMessageCallback(MQTTService.FUNCTION_CODE_GENERATION, null);
+            //     }
+            // } catch (Exception e) {
+            //     LOG.error("清理MQTT回调时出错", e);
+            // }
             
             LOG.info("ChatToolWindowPanel disposed");
         } catch (Exception e) {
@@ -1028,7 +1052,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         if (mqttService != null) {
             LOG.info("开始设置代码生成MQTT回调函数");
             mqttService.setMessageCallback(MQTTService.FUNCTION_CODE_GENERATION, this::onMQTTMessage);
-            LOG.info("代码生成MQTT回调函数设置完成");
+            LOG.info("强制设置code_generation MQTT回调函数为当前实例");
         } else {
             LOG.error("MQTT服务实例为空，无法设置回调");
         }
@@ -1138,4 +1162,24 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     /**
      * 释放资源
      */
+    private void showFeedbackDialog(String title) {
+        JTextArea feedbackArea = new JTextArea(5, 30);
+        feedbackArea.setLineWrap(true);
+        feedbackArea.setWrapStyleWord(true);
+        JScrollPane scrollPane = new JScrollPane(feedbackArea);
+        int result = JOptionPane.showConfirmDialog(
+            this,
+            scrollPane,
+            title + "（请留下您的宝贵意见）",
+            JOptionPane.OK_CANCEL_OPTION,
+            JOptionPane.PLAIN_MESSAGE
+        );
+        if (result == JOptionPane.OK_OPTION) {
+            String feedback = feedbackArea.getText().trim();
+            if (!feedback.isEmpty()) {
+                // 这里可以扩展为发送到服务器等
+                JOptionPane.showMessageDialog(this, "感谢您的反馈！", "反馈成功", JOptionPane.INFORMATION_MESSAGE);
+            }
+        }
+    }
 } 
