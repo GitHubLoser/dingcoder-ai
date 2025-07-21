@@ -385,6 +385,10 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         if (input.isEmpty() || isWaitingForGeneration) {
             return;
         }
+        if (!authService.isLoggedIn()) {
+            JOptionPane.showMessageDialog(this, "登录状态未同步，请稍后再试", "提示", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
         addUserMessage(input);
         inputField.setText("");
         // 彻底移除 setPreferredSize、revalidate、repaint 相关代码
@@ -474,175 +478,69 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             outerPanel.add(Box.createHorizontalGlue());
             JPanel bubble = new JPanel();
             bubble.setOpaque(true);
-            // 使用更柔和的灰色背景
             bubble.setBackground(new JBColor(new Color(243, 244, 246), new Color(50, 54, 60)));
             bubble.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
             bubble.setLayout(new BoxLayout(bubble, BoxLayout.X_AXIS));
             JLabel label = new JLabel("<html>" + content.replace("\n", "<br>") + "</html>");
             label.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
-            // 使用更深的文字颜色
             label.setForeground(new JBColor(new Color(31, 35, 40), new Color(230, 237, 243)));
             bubble.add(label);
             outerPanel.add(bubble);
-        } else if (content.trim().startsWith("package ") || content.trim().contains("class ") || content.trim().contains("interface ") || content.trim().contains("enum ")) {
-            // 折叠代码块：默认只显示类名，点击展开/收起完整代码
-            String classLine = extractJavaClassLine(content);
-            JPanel foldPanel = new JPanel();
-            foldPanel.setLayout(new BorderLayout());
-            foldPanel.setOpaque(false);
-
-            // 折叠按钮（类名）
-            JToggleButton toggleButton = new JToggleButton("▶ " + classLine);
-            toggleButton.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 14));
-            toggleButton.setFocusPainted(false);
-            toggleButton.setContentAreaFilled(false);
-            toggleButton.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
-            toggleButton.setHorizontalAlignment(SwingConstants.LEFT);
-
-            // 生成Java文件按钮
-            JButton generateButton = new JButton("生成Java文件");
-            generateButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
-            generateButton.setForeground(JBColor.foreground());
-            generateButton.setBackground(new JBColor(new Color(0x2B5AB8), new Color(0x2B5AB8)));
-            generateButton.setBorder(BorderFactory.createEmptyBorder(6, 12, 6, 12));
-            generateButton.setFocusPainted(false);
-            generateButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-            generateButton.setOpaque(true);
-            generateButton.addActionListener(e -> {
-                CodeGenerationService codeGenService = CodeGenerationService.getInstance(project);
-                if (codeGenService.generateJavaFile(content, true)) {
-                    generateButton.setText("✓ 已生成");
-                    generateButton.setEnabled(false);
-                    generateButton.setBackground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
-                }
-            });
-            generateButton.addMouseListener(new MouseAdapter() {
-                @Override
-                public void mouseEntered(MouseEvent e) {
-                    if (generateButton.isEnabled()) {
-                        generateButton.setBackground(new JBColor(new Color(0x234A94), new Color(0x234A94)));
-                    }
-                }
-                @Override
-                public void mouseExited(MouseEvent e) {
-                    if (generateButton.isEnabled()) {
-                        generateButton.setBackground(new JBColor(new Color(0x2B5AB8), new Color(0x2B5AB8)));
-                    }
-                }
-            });
-
-            // 标题行（类名+按钮）
-            JPanel titlePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-            titlePanel.setOpaque(false);
-            titlePanel.add(toggleButton);
-            titlePanel.add(generateButton);
-            // 新增：点赞和点踩按钮
-            JButton likeButton = new JButton("👍");
-            likeButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 16));
-            likeButton.setFocusPainted(false);
-            likeButton.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
-            likeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-            likeButton.setOpaque(true);
-            likeButton.setBackground(new JBColor(new Color(0xE6F7FF), new Color(0x2B2B2B)));
-            likeButton.addActionListener(e -> showFeedbackDialog("点赞反馈"));
-
-            JButton dislikeButton = new JButton("👎");
-            dislikeButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 16));
-            dislikeButton.setFocusPainted(false);
-            dislikeButton.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
-            dislikeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-            dislikeButton.setOpaque(true);
-            dislikeButton.setBackground(new JBColor(new Color(0xFFF1F0), new Color(0x2B2B2B)));
-            dislikeButton.addActionListener(e -> showFeedbackDialog("点踩反馈"));
-            titlePanel.add(likeButton);
-            titlePanel.add(dislikeButton);
-
-            // 代码编辑器
-            EditorFactory editorFactory = EditorFactory.getInstance();
-            Document document = editorFactory.createDocument(content);
-            Editor editor = editorFactory.createEditor(document, project, JavaFileType.INSTANCE, true);
-            EditorEx editorEx = (EditorEx) editor;
-            EditorSettings settings = editor.getSettings();
-            settings.setFoldingOutlineShown(false);
-            settings.setLineNumbersShown(false);
-            settings.setLineMarkerAreaShown(false);
-            settings.setIndentGuidesShown(false);
-            settings.setGutterIconsShown(false);
-            settings.setRightMarginShown(false);
-            settings.setAdditionalColumnsCount(0);
-            settings.setAdditionalLinesCount(0);
-            settings.setUseSoftWraps(true);
-            EditorColorsScheme colorsScheme = EditorColorsManager.getInstance().getGlobalScheme();
-            editorEx.setColorsScheme(colorsScheme);
-            editorEx.setBackgroundColor(new JBColor(new Color(250, 250, 250), new Color(40, 44, 50)));
-            editorEx.getColorsScheme().setEditorFontName("JetBrains Mono");
-            
-            // 启用编辑器的复制功能
-            editorEx.setViewer(false); // 设置为可编辑模式，这样可以选择和复制
-            editorEx.setOneLineMode(false);
-            
-            message.setEditor(editor);
-            JComponent editorComponent = editor.getComponent();
-            editorComponent.setVisible(false); // 默认折叠
-
-            // 展开/收起逻辑
-            toggleButton.addActionListener(e -> {
-                boolean expanded = toggleButton.isSelected();
-                editorComponent.setVisible(expanded);
-                toggleButton.setText((expanded ? "▼ " : "▶ ") + classLine);
-                foldPanel.revalidate();
-                foldPanel.repaint();
-            });
-            
-            // 为编辑器添加右键菜单
-            editorComponent.addMouseListener(new MouseAdapter() {
-                @Override
-                public void mousePressed(MouseEvent e) {
-                    if (e.isPopupTrigger()) {
-                        showEditorContextMenu(e, editor, content);
-                    }
-                }
-                
-                @Override
-                public void mouseReleased(MouseEvent e) {
-                    if (e.isPopupTrigger()) {
-                        showEditorContextMenu(e, editor, content);
-                    }
-                }
-            });
-            
-            // 为编辑器添加键盘快捷键支持
-            editorComponent.getInputMap().put(KeyStroke.getKeyStroke(KeyEvent.VK_C, Toolkit.getDefaultToolkit().getMenuShortcutKeyMask()), "copy");
-            editorComponent.getActionMap().put("copy", new AbstractAction() {
-                @Override
-                public void actionPerformed(ActionEvent e) {
-                    String selectedText = editor.getSelectionModel().getSelectedText();
-                    if (selectedText != null && !selectedText.isEmpty()) {
-                        copyToClipboard(selectedText);
-                    } else {
-                        // 如果没有选中文本，复制全部内容
-                        copyToClipboard(content);
-                    }
-                }
-            });
-
-            foldPanel.add(titlePanel, BorderLayout.NORTH);
-            foldPanel.add(editorComponent, BorderLayout.CENTER);
-            outerPanel.add(foldPanel);
-        } else {
-            // AI普通消息：靠左灰色气泡
-            JPanel bubble = new JPanel();
-            bubble.setOpaque(true);
-            bubble.setBackground(new JBColor(new Color(245, 247, 250), new Color(60, 60, 60)));
-            bubble.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
-            bubble.setLayout(new BoxLayout(bubble, BoxLayout.X_AXIS));
-            JLabel label = new JLabel("<html>" + content.replace("\n", "<br>") + "</html>");
-            label.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
-            label.setForeground(new JBColor(new Color(33, 33, 33), new Color(220, 220, 220)));
-            bubble.add(label);
-            outerPanel.add(bubble);
-            outerPanel.add(Box.createHorizontalGlue());
+            return outerPanel;
         }
+
+        // 只要有生成Java文件按钮就加点赞点踩
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.X_AXIS));
+        panel.setOpaque(false);
+
+        JLabel label = new JLabel("<html>" + content.replace("\n", "<br>") + "</html>");
+        label.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
+        label.setForeground(new JBColor(new Color(31, 35, 40), new Color(230, 237, 243)));
+        panel.add(label);
+        panel.add(Box.createHorizontalStrut(8));
+
+        JButton generateButton = new JButton("生成Java文件");
+        generateButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
+        generateButton.setForeground(JBColor.foreground());
+        generateButton.setBackground(new JBColor(new Color(0x2B5AB8), new Color(0x2B5AB8)));
+        generateButton.setBorder(BorderFactory.createEmptyBorder(6, 12, 6, 12));
+        generateButton.setFocusPainted(false);
+        generateButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        generateButton.setOpaque(true);
+        generateButton.addActionListener(e -> {
+            CodeGenerationService codeGenService = CodeGenerationService.getInstance(project);
+            if (codeGenService.generateJavaFile(content, true)) {
+                generateButton.setText("✓ 已生成");
+                generateButton.setEnabled(false);
+                generateButton.setBackground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
+            }
+        });
+        panel.add(generateButton);
+        panel.add(Box.createHorizontalStrut(8));
+
+        JButton likeButton = new JButton("👍");
+        likeButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 16));
+        likeButton.setFocusPainted(false);
+        likeButton.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
+        likeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        likeButton.setOpaque(true);
+        likeButton.setBackground(new JBColor(new Color(0xE6F7FF), new Color(0x2B2B2B)));
+        likeButton.addActionListener(e -> showFeedbackDialog("点赞反馈"));
+        panel.add(likeButton);
+
+        JButton dislikeButton = new JButton("👎");
+        dislikeButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 16));
+        dislikeButton.setFocusPainted(false);
+        dislikeButton.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
+        dislikeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        dislikeButton.setOpaque(true);
+        dislikeButton.setBackground(new JBColor(new Color(0xFFF1F0), new Color(0x2B2B2B)));
+        dislikeButton.addActionListener(e -> showFeedbackDialog("点踩反馈"));
+        panel.add(dislikeButton);
+
+        panel.add(Box.createHorizontalGlue());
+        outerPanel.add(panel);
         return outerPanel;
     }
     

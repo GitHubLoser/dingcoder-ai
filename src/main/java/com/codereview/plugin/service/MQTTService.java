@@ -123,7 +123,7 @@ public final class MQTTService {
                                         }
                                     });
                                 } else {
-                                    LOG.warn("未找到功能类型 " + functionType + " 的回调函数");
+                                    LOG.warn("未找到功能类型 " + functionType + " 的回调函数，当前已注册回调key: " + topicCallbacks.keySet());
                                     // 如果没有找到对应的回调，缓存消息
                                     pendingMessages.offer(parsedContent);
                                 }
@@ -158,6 +158,19 @@ public final class MQTTService {
             LOG.info("已订阅代码审查 Topic: " + codeReviewTopic);
 
             isConnected = true;
+
+            // 连接成功后，主动通知UI注册回调
+            try {
+                com.codereview.plugin.ui.ChatToolWindowPanel chatPanel = com.codereview.plugin.ui.ChatToolWindowPanel.getInstance();
+                if (chatPanel != null) {
+                    LOG.info("MQTT连接成功后，主动通知ChatToolWindowPanel注册code_generation回调");
+                    chatPanel.ensureCodeGenerationMqttCallback();
+                } else {
+                    LOG.warn("MQTT连接成功后，ChatToolWindowPanel实例为null，无法注册回调");
+                }
+            } catch (Exception e) {
+                LOG.error("MQTT连接成功后通知UI注册回调时出错", e);
+            }
 
         } catch (Exception e) {
             LOG.error("MQTT连接失败", e);

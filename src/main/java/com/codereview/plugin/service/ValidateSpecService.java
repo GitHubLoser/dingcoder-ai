@@ -30,8 +30,20 @@ public class ValidateSpecService {
      * @param filePath 当前选中的目录路径
      */
     public void callValidateSpecApi(String text, String filePath) {
+        callValidateSpecApiWithRetry(text, filePath, 0);
+    }
+
+    private void callValidateSpecApiWithRetry(String text, String filePath, int retryCount) {
         if (!authService.isLoggedIn()) {
-            LOG.warn("用户未登录，无法调用API");
+            LOG.warn("用户未登录，无法调用API，重试次数: " + retryCount);
+            if (retryCount < 3) {
+                new java.util.Timer().schedule(new java.util.TimerTask() {
+                    @Override
+                    public void run() {
+                        callValidateSpecApiWithRetry(text, filePath, retryCount + 1);
+                    }
+                }, 100);
+            }
             return;
         }
         

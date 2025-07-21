@@ -315,60 +315,31 @@ public final class ReviewService {
     // 新增：创建跳过SSL校验的RestTemplate
     public static RestTemplate createUnsafeRestTemplate() {
         try {
-            SSLContext sslContext = SSLContext.getInstance("TLS");
-            sslContext.init(null, new TrustManager[]{new javax.net.ssl.X509TrustManager() {
-                public void checkClientTrusted(java.security.cert.X509Certificate[] xcs, String string) {}
-                public void checkServerTrusted(java.security.cert.X509Certificate[] xcs, String string) {}
-                public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0]; }
-            }}, new java.security.SecureRandom());
+            // 创建信任所有证书的SSLContext
+            javax.net.ssl.SSLContext sslContext = javax.net.ssl.SSLContext.getInstance("TLS");
+            sslContext.init(null, new javax.net.ssl.TrustManager[]{
+                new javax.net.ssl.X509TrustManager() {
+                    public void checkClientTrusted(java.security.cert.X509Certificate[] xcs, String string) {}
+                    public void checkServerTrusted(java.security.cert.X509Certificate[] xcs, String string) {}
+                    public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0]; }
+                }
+            }, new java.security.SecureRandom());
 
-            javax.net.ssl.HttpsURLConnection.setDefaultSSLSocketFactory(sslContext.getSocketFactory());
-            javax.net.ssl.HttpsURLConnection.setDefaultHostnameVerifier((hostname, session) -> true);
-
-            // 使用HttpComponentsClientHttpRequestFactory提供更好的连接池管理和超时控制
-            try {
-                // 创建SSL连接工厂
-                org.apache.http.conn.ssl.SSLConnectionSocketFactory sslSocketFactory = 
-                    new org.apache.http.conn.ssl.SSLConnectionSocketFactory(sslContext, 
-                        new String[]{"TLSv1.2", "TLSv1.1", "TLSv1"}, 
-                        null, 
-                        org.apache.http.conn.ssl.NoopHostnameVerifier.INSTANCE);
-
-                // 创建连接池管理器
-                org.apache.http.impl.conn.PoolingHttpClientConnectionManager connectionManager = 
-                    new org.apache.http.impl.conn.PoolingHttpClientConnectionManager();
-                connectionManager.setMaxTotal(20); // 最大连接数
-                connectionManager.setDefaultMaxPerRoute(10); // 每个路由最大连接数
-
-                // 创建HTTP客户端
-                org.apache.http.impl.client.CloseableHttpClient httpClient = 
-                    org.apache.http.impl.client.HttpClients.custom()
-                        .setSSLSocketFactory(sslSocketFactory)
-                        .setConnectionManager(connectionManager)
-                        .setConnectionManagerShared(true)
-                        .build();
-
-                // 创建请求工厂
-                org.springframework.http.client.HttpComponentsClientHttpRequestFactory requestFactory = 
-                    new org.springframework.http.client.HttpComponentsClientHttpRequestFactory(httpClient);
-                
-                // 设置超时时间
-                requestFactory.setConnectTimeout(30000); // 连接超时30秒
-                requestFactory.setReadTimeout(60000); // 读取超时60秒
-                
-                return createUnsafeRestTemplate();
-            } catch (Exception httpComponentsException) {
-                LOG.warn("HttpComponents不可用，回退到SimpleClientHttpRequestFactory", httpComponentsException);
-                // 回退到SimpleClientHttpRequestFactory
-                org.springframework.http.client.SimpleClientHttpRequestFactory fallbackFactory = 
-                    new org.springframework.http.client.SimpleClientHttpRequestFactory();
-                fallbackFactory.setConnectTimeout(30000);
-                fallbackFactory.setReadTimeout(60000);
-                return createUnsafeRestTemplate();
-            }
+            // 禁用KeepAlive，强制每次新建连接
+            org.apache.http.impl.conn.BasicHttpClientConnectionManager connManager = new org.apache.http.impl.conn.BasicHttpClientConnectionManager();
+            org.apache.http.impl.client.CloseableHttpClient httpClient = org.apache.http.impl.client.HttpClients.custom()
+                .setSSLContext(sslContext)
+                .setConnectionManager(connManager)
+                .disableConnectionState()
+                .disableCookieManagement()
+                .setKeepAliveStrategy((response, context) -> 0)
+                .build();
+            org.springframework.http.client.HttpComponentsClientHttpRequestFactory factory = new org.springframework.http.client.HttpComponentsClientHttpRequestFactory(httpClient);
+            factory.setConnectTimeout(30000);
+            factory.setReadTimeout(60000);
+            return new RestTemplate(factory);
         } catch (Exception e) {
-            LOG.error("创建RestTemplate失败", e);
-            throw new RuntimeException("无法创建HTTP客户端", e);
+            throw new RuntimeException("无法创建信任所有证书的RestTemplate", e);
         }
     }
 
