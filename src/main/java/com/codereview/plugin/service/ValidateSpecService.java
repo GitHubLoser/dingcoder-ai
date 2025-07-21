@@ -36,7 +36,7 @@ public class ValidateSpecService {
         }
         
         try {
-            RestTemplate restTemplate = new RestTemplate();
+            RestTemplate restTemplate = ReviewService.createUnsafeRestTemplate();
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             

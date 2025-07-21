@@ -344,23 +344,34 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         
         // 更新输入区域状态
         inputField.setEnabled(isLoggedIn);
-        // 发送按钮状态：登录状态 && 不在等待生成状态
-        boolean canSend = isLoggedIn && !isWaitingForGeneration;
-        sendButton.setEnabled(canSend);
-        
-        // 更新发送按钮样式
-        if (canSend) {
-            sendButton.setText("发送");
-            sendButton.setBackground(SEND_BUTTON_COLOR);
-            sendButton.setBorder(new RoundedBorder(6, SEND_BUTTON_COLOR, 0));
-        } else if (isWaitingForGeneration) {
-            sendButton.setText("生成中...");
-            sendButton.setBackground(SEND_BUTTON_DISABLED_COLOR);
-            sendButton.setBorder(new RoundedBorder(6, SEND_BUTTON_DISABLED_COLOR, 0));
+        // 登录后延迟解锁发送按钮，避免race condition
+        if (isLoggedIn && isWaitingForGeneration == false) {
+            sendButton.setEnabled(false);
+            new javax.swing.Timer(300, e -> {
+                sendButton.setEnabled(true);
+                sendButton.setText("发送");
+                sendButton.setBackground(SEND_BUTTON_COLOR);
+                sendButton.setBorder(new RoundedBorder(6, SEND_BUTTON_COLOR, 0));
+                ((javax.swing.Timer) e.getSource()).stop();
+            }).start();
         } else {
-            sendButton.setText("发送");
-            sendButton.setBackground(SEND_BUTTON_DISABLED_COLOR);
-            sendButton.setBorder(new RoundedBorder(6, SEND_BUTTON_DISABLED_COLOR, 0));
+            // 发送按钮状态：登录状态 && 不在等待生成状态
+            boolean canSend = isLoggedIn && !isWaitingForGeneration;
+            sendButton.setEnabled(canSend);
+            // 更新发送按钮样式
+            if (canSend) {
+                sendButton.setText("发送");
+                sendButton.setBackground(SEND_BUTTON_COLOR);
+                sendButton.setBorder(new RoundedBorder(6, SEND_BUTTON_COLOR, 0));
+            } else if (isWaitingForGeneration) {
+                sendButton.setText("生成中...");
+                sendButton.setBackground(SEND_BUTTON_DISABLED_COLOR);
+                sendButton.setBorder(new RoundedBorder(6, SEND_BUTTON_DISABLED_COLOR, 0));
+            } else {
+                sendButton.setText("发送");
+                sendButton.setBackground(SEND_BUTTON_DISABLED_COLOR);
+                sendButton.setBorder(new RoundedBorder(6, SEND_BUTTON_DISABLED_COLOR, 0));
+            }
         }
         
         revalidate();
@@ -521,13 +532,10 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             });
 
             // 标题行（类名+按钮）
-            JPanel titlePanel = new JPanel();
-            titlePanel.setLayout(new BoxLayout(titlePanel, BoxLayout.X_AXIS));
+            JPanel titlePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
             titlePanel.setOpaque(false);
             titlePanel.add(toggleButton);
-            titlePanel.add(Box.createHorizontalStrut(8));
             titlePanel.add(generateButton);
-
             // 新增：点赞和点踩按钮
             JButton likeButton = new JButton("👍");
             likeButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 16));
@@ -546,12 +554,8 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             dislikeButton.setOpaque(true);
             dislikeButton.setBackground(new JBColor(new Color(0xFFF1F0), new Color(0x2B2B2B)));
             dislikeButton.addActionListener(e -> showFeedbackDialog("点踩反馈"));
-
-            titlePanel.add(Box.createHorizontalStrut(8));
             titlePanel.add(likeButton);
-            titlePanel.add(Box.createHorizontalStrut(4));
             titlePanel.add(dislikeButton);
-            titlePanel.add(Box.createHorizontalGlue());
 
             // 代码编辑器
             EditorFactory editorFactory = EditorFactory.getInstance();

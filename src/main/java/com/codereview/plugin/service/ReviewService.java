@@ -356,7 +356,7 @@ public final class ReviewService {
                 requestFactory.setConnectTimeout(30000); // 连接超时30秒
                 requestFactory.setReadTimeout(60000); // 读取超时60秒
                 
-                return new RestTemplate(requestFactory);
+                return createUnsafeRestTemplate();
             } catch (Exception httpComponentsException) {
                 LOG.warn("HttpComponents不可用，回退到SimpleClientHttpRequestFactory", httpComponentsException);
                 // 回退到SimpleClientHttpRequestFactory
@@ -364,7 +364,7 @@ public final class ReviewService {
                     new org.springframework.http.client.SimpleClientHttpRequestFactory();
                 fallbackFactory.setConnectTimeout(30000);
                 fallbackFactory.setReadTimeout(60000);
-                return new RestTemplate(fallbackFactory);
+                return createUnsafeRestTemplate();
             }
         } catch (Exception e) {
             LOG.error("创建RestTemplate失败", e);
