@@ -127,6 +127,8 @@ public class LoginDialog extends DialogWrapper {
             prefs.remove("password");
         }
         prefs.putBoolean("remember", remember);
+        // 登录中，用户名输入框不可编辑
+        usernameField.setEditable(false);
         LOG.info("用户点击登录，用户名: " + username);
         
         // 清除之前的错误提示
@@ -170,6 +172,7 @@ public class LoginDialog extends DialogWrapper {
                         LOG.warn("登录失败，authService.isLoggedIn()=false");
                         // 登录失败 - 恢复UI状态
                         restoreUIAfterFailure("登录失败，请检查用户名和密码是否正确");
+                        usernameField.setEditable(true);
                     }
                 });
             } catch (Exception e) {
@@ -177,6 +180,7 @@ public class LoginDialog extends DialogWrapper {
                 SwingUtilities.invokeLater(() -> {
                     String errorMessage = "登录过程中发生错误：" + e.getMessage();
                     restoreUIAfterFailure(errorMessage);
+                    usernameField.setEditable(true);
                 });
             }
         }).start();
@@ -206,5 +210,6 @@ public class LoginDialog extends DialogWrapper {
             "登录失败",
             JOptionPane.ERROR_MESSAGE
         );
+        usernameField.setEditable(true);
     }
 } 
