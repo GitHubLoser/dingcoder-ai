@@ -602,8 +602,11 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                 CodeGenerationService codeGenService = CodeGenerationService.getInstance(project);
                 if (codeGenService.generateJavaFile(content, true)) {
                     generateButton.setText("✓ 已生成");
-                    generateButton.setEnabled(false);
+                    generateButton.setEnabled(true);
                     generateButton.setBackground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
+                    
+                    // 记录代码生成统计
+                    recordCodeGenerationEvent(content, className, true);
                 }
             });
             
@@ -617,11 +620,13 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             likeButton.addActionListener(e -> {
                 String feedback = showFeedbackDialog("点赞反馈", "请告诉我们您喜欢这个回答的原因：");
                 if (feedback != null) {
-                    // 这里可以添加发送反馈到服务器的逻辑
                     LOG.info("用户点赞反馈: " + feedback);
                     likeButton.setText("👍");
                     likeButton.setEnabled(false);
                     likeButton.setForeground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
+                    
+                    // 记录用户反馈统计
+                    recordUserFeedbackEvent(content, "LIKE", feedback);
                 }
             });
             
@@ -635,11 +640,13 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             dislikeButton.addActionListener(e -> {
                 String feedback = showFeedbackDialog("改进建议", "请告诉我们您认为需要改进的地方：");
                 if (feedback != null) {
-                    // 这里可以添加发送反馈到服务器的逻辑
                     LOG.info("用户点踩反馈: " + feedback);
                     dislikeButton.setText("👎");
                     dislikeButton.setEnabled(false);
                     dislikeButton.setForeground(new JBColor(new Color(0xDC3545), new Color(0xDC3545)));
+                    
+                    // 记录用户反馈统计
+                    recordUserFeedbackEvent(content, "DISLIKE", feedback);
                 }
             });
 
@@ -1257,5 +1264,107 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         }
         
         return null;
+    }
+
+    /**
+     * 记录代码生成事件
+     */
+    private void recordCodeGenerationEvent(String codeContent, String className, boolean actuallyGenerated) {
+        try {
+            String userId = authService.getCurrentUser();
+            if (userId == null) {
+                LOG.warn("用户未登录，跳过统计事件发送");
+                return;
+            }
+
+            String codeHash = calculateHash(codeContent);
+            
+            // 构建统计事件数据
+            String eventData = String.format(
+                "{\"eventType\":\"CODE_GENERATION\",\"userId\":\"%s\",\"timestamp\":\"%s\",\"data\":{\"codeHash\":\"%s\",\"className\":\"%s\",\"actuallyGenerated\":%b}}",
+                userId, java.time.Instant.now().toString(), codeHash, className, actuallyGenerated
+            );
+            
+            // 异步发送统计数据
+            sendStatisticsEvent(eventData);
+            
+        } catch (Exception e) {
+            LOG.warn("记录代码生成事件失败", e);
+        }
+    }
+
+    /**
+     * 记录用户反馈事件
+     */
+    private void recordUserFeedbackEvent(String codeContent, String feedbackType, String feedbackContent) {
+        try {
+            String userId = authService.getCurrentUser();
+            if (userId == null) {
+                LOG.warn("用户未登录，跳过统计事件发送");
+                return;
+            }
+
+            String codeHash = calculateHash(codeContent);
+            
+            // 转义引号
+            String escapedContent = feedbackContent.replace("\"", "\\\"").replace("\n", "\\n");
+            
+            // 构建统计事件数据
+            String eventData = String.format(
+                "{\"eventType\":\"USER_FEEDBACK\",\"userId\":\"%s\",\"timestamp\":\"%s\",\"data\":{\"codeHash\":\"%s\",\"feedbackType\":\"%s\",\"feedbackContent\":\"%s\"}}",
+                userId, java.time.Instant.now().toString(), codeHash, feedbackType, escapedContent
+            );
+            
+            // 异步发送统计数据
+            sendStatisticsEvent(eventData);
+            
+        } catch (Exception e) {
+            LOG.warn("记录用户反馈事件失败", e);
+        }
+    }
+
+    /**
+     * 发送统计事件到后端
+     */
+    private void sendStatisticsEvent(String eventData) {
+        // 这里可以根据实际情况配置统计服务的URL
+        // 暂时只记录日志，实际使用时替换为HTTP调用
+        LOG.info("统计事件: " + eventData);
+        
+        // TODO: 实际实现时替换为HTTP请求
+        // 示例：
+        // String statisticsUrl = "https://your-backend.com/api/statistics/event";
+        // HttpClient.newHttpClient().sendAsync(
+        //     HttpRequest.newBuilder()
+        //         .uri(URI.create(statisticsUrl))
+        //         .header("Content-Type", "application/json")
+        //         .POST(HttpRequest.BodyPublishers.ofString(eventData))
+        //         .build(),
+        //     HttpResponse.BodyHandlers.ofString()
+        // );
+    }
+
+    /**
+     * 计算字符串的哈希值
+     */
+    private String calculateHash(String content) {
+        try {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(content.getBytes("UTF-8"));
+            StringBuilder hexString = new StringBuilder();
+            
+            for (byte b : hash) {
+                String hex = Integer.toHexString(0xff & b);
+                if (hex.length() == 1) {
+                    hexString.append('0');
+                }
+                hexString.append(hex);
+            }
+            
+            return hexString.toString().substring(0, 16); // 取前16位作为短哈希
+        } catch (Exception e) {
+            LOG.warn("计算哈希值失败", e);
+            return String.valueOf(content.hashCode());
+        }
     }
 } 
