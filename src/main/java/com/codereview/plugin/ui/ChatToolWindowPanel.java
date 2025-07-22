@@ -390,7 +390,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             return;
         }
         if (!authService.isLoggedIn()) {
-            JOptionPane.showMessageDialog(this, "登录状态未同步，请稍后再试", "提示", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this, "登录状态未同步，请退出再试", "提示", JOptionPane.WARNING_MESSAGE);
             return;
         }
         
