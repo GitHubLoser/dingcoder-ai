@@ -345,6 +345,9 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
 
         // 更新输入区域状态
         inputField.setEnabled(isLoggedIn);
+        // 输入框可编辑状态：登录状态 && 不在等待生成状态
+        inputField.setEditable(isLoggedIn && !isWaitingForGeneration);
+        
         // 登录后延迟解锁发送按钮，避免race condition
         if (isLoggedIn && isWaitingForGeneration == false) {
             sendButton.setEnabled(false);
@@ -365,7 +368,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                 sendButton.setBackground(SEND_BUTTON_COLOR);
                 sendButton.setBorder(new RoundedBorder(6, SEND_BUTTON_COLOR, 0));
             } else if (isWaitingForGeneration) {
-                sendButton.setText("生成中...");
+                sendButton.setText("停止生成");
                 sendButton.setBackground(SEND_BUTTON_DISABLED_COLOR);
                 sendButton.setBorder(new RoundedBorder(6, SEND_BUTTON_DISABLED_COLOR, 0));
             } else {
@@ -393,8 +396,18 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         addUserMessage(input);
         inputField.setText("");
         isWaitingForGeneration = true;
+        
+        // 设置输入框不可编辑
+        inputField.setEditable(false);
+        
         updateSendButtonForCancel();
-        addAssistantMessage("正在为您生成代码，请稍候...");
+        addAssistantMessage("正在为您生成，请稍候");
+        
+        // 立即切换到聊天面板
+        if (chatScrollPane.getViewport().getView() == welcomePanel) {
+            chatScrollPane.setViewportView(chatPanel);
+        }
+        
         VirtualFile selectedDir = CodeGenerationService.getInstance(project).getCurrentSelectedDirectory();
         String filePath = selectedDir != null ? selectedDir.getPath() : "";
         validateSpecService.callValidateSpecApi(input, filePath);
@@ -406,7 +419,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             return;
         }
         sendButton.setEnabled(true);
-        sendButton.setText("取消生成");
+        sendButton.setText("停止生成");
         sendButton.setBackground(SEND_BUTTON_DISABLED_COLOR);
         sendButton.setBorder(new RoundedBorder(6, SEND_BUTTON_DISABLED_COLOR, 0));
         for (ActionListener l : sendButton.getActionListeners()) {
@@ -417,6 +430,10 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
 
     private void onCancelGeneration() {
         isWaitingForGeneration = false;
+        
+        // 恢复输入框可编辑状态
+        inputField.setEditable(true);
+        
         updateSendButtonForSend();
     }
 
@@ -472,7 +489,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         outerPanel.setBorder(JBUI.Borders.empty(2, 0, 2, 0));
 
         String content = message.getContent();
-        boolean isSpecialMessage = "正在为您生成代码，请稍候...".equals(content.trim()) ||
+        boolean isSpecialMessage = "正在为您生成，请稍候".equals(content.trim()) ||
                                  "所有代码均已生成".equals(content.trim());
 
         if (isSpecialMessage) {
@@ -505,17 +522,19 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             return outerPanel;
         }
 
-        // 判断是否为Java文件
-        boolean isJavaFile = content.contains("package ") && (content.contains("class ") || content.contains("interface ") || content.contains("enum "));
+        // 判断是否为代码（包含package声明或类定义）
+        boolean isCode = isJavaCode(content);
 
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         panel.setOpaque(false);
 
-        // 折叠区和按钮只在Java文件时显示
-        if (isJavaFile) {
+        if (isCode) {
+            // 代码消息 - 默认折叠显示
             JPanel codePanel = new JPanel(new BorderLayout());
             codePanel.setOpaque(false);
+            
+            // 代码内容区域
             JTextArea codeArea = new JTextArea();
             codeArea.setEditable(false);
             codeArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 13));
@@ -523,48 +542,59 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             codeArea.setWrapStyleWord(true);
             codeArea.setText(content);
             codeArea.setBackground(new JBColor(new Color(251, 252, 253), new Color(40, 40, 40)));
-            codeArea.setBorder(JBUI.Borders.empty(8, 16, 8, 16));
+            codeArea.setBorder(JBUI.Borders.empty(12, 16, 12, 16));
             JScrollPane codeScroll = new JScrollPane(codeArea);
-            codeScroll.setBorder(null);
+            codeScroll.setBorder(BorderFactory.createLineBorder(new JBColor(new Color(230, 230, 230), new Color(70, 70, 70)), 1));
             codeScroll.setVisible(false); // 默认折叠
+            
+            // 设置滚动条属性，确保代码很长时可以滚动
+            codeScroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+            codeScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+            codeScroll.setPreferredSize(new Dimension(0, 300)); // 设置最大高度为300px
+            codeScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, 300));
 
-            String className = extractJavaClassLine(content);
-            String summaryText = className;
-            JLabel summaryLabel = new JLabel(summaryText);
-            summaryLabel.setFont(new Font(Font.MONOSPACED, Font.BOLD, 13));
-            summaryLabel.setForeground(JBColor.foreground());
-            summaryLabel.setBorder(JBUI.Borders.empty(8, 16, 8, 16));
+            // 折叠标题栏 - 包含类名和所有按钮
+            JPanel headerPanel = new JPanel(new BorderLayout());
+            headerPanel.setOpaque(true);
+            headerPanel.setBackground(new JBColor(new Color(247, 248, 250), new Color(50, 50, 50)));
+            headerPanel.setBorder(JBUI.Borders.empty(8, 16, 8, 16));
 
-            JButton toggleBtn = new JButton("▼");
+            // 左侧：折叠按钮和类名
+            JPanel leftPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+            leftPanel.setOpaque(false);
+
+            JButton toggleBtn = new JButton("▶");  // 默认折叠，用右箭头
             toggleBtn.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
             toggleBtn.setFocusPainted(false);
+            toggleBtn.setBorderPainted(false);
+            toggleBtn.setContentAreaFilled(false);
             toggleBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             toggleBtn.addActionListener(e -> {
                 boolean expanded = codeScroll.isVisible();
                 codeScroll.setVisible(!expanded);
-                summaryLabel.setVisible(expanded);
-                toggleBtn.setText(expanded ? "▼" : "▲");
+                toggleBtn.setText(expanded ? "▶" : "▼");
                 panel.revalidate();
                 panel.repaint();
             });
 
-            JPanel summaryPanel = new JPanel(new BorderLayout());
-            summaryPanel.setOpaque(false);
-            summaryPanel.add(summaryLabel, BorderLayout.CENTER);
-            summaryPanel.add(toggleBtn, BorderLayout.EAST);
+            String className = extractClassName(content);
+            JLabel summaryLabel = new JLabel("  " + className);  // 添加一点间距
+            summaryLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 13));
+            summaryLabel.setForeground(JBColor.foreground());
 
-            panel.add(summaryPanel);
-            panel.add(codeScroll);
+            leftPanel.add(toggleBtn);
+            leftPanel.add(summaryLabel);
 
-            // 生成按钮
-            JPanel btnPanel = new JPanel();
-            btnPanel.setOpaque(false);
-            btnPanel.setLayout(new FlowLayout(FlowLayout.LEFT, 8, 0));
-            JButton generateButton = new JButton("生成Java文件");
-            generateButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
-            generateButton.setForeground(JBColor.foreground());
+            // 右侧：操作按钮
+            JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));  // 完全去除按钮间距
+            rightPanel.setOpaque(false);
+            
+            // 生成文件按钮
+            JButton generateButton = new JButton("生成文件");
+            generateButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 11));  // 字体稍小
+            generateButton.setForeground(Color.WHITE);
             generateButton.setBackground(new JBColor(new Color(0x2B5AB8), new Color(0x2B5AB8)));
-            generateButton.setBorder(BorderFactory.createEmptyBorder(6, 12, 6, 12));
+            generateButton.setBorder(BorderFactory.createEmptyBorder(3, 6, 3, 6));  // 减少内边距
             generateButton.setFocusPainted(false);
             generateButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             generateButton.setOpaque(true);
@@ -576,43 +606,133 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                     generateButton.setBackground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
                 }
             });
-            btnPanel.add(generateButton);
-            panel.add(btnPanel);
+            
+            // 点赞按钮
+            JButton likeButton = new JButton("👍");
+            likeButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 11));  // 字体稍小
+            likeButton.setBorder(BorderFactory.createEmptyBorder(3, 2, 3, 2));  // 进一步减少内边距
+            likeButton.setFocusPainted(false);
+            likeButton.setContentAreaFilled(false);
+            likeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            likeButton.addActionListener(e -> {
+                String feedback = showFeedbackDialog("点赞反馈", "请告诉我们您喜欢这个回答的原因：");
+                if (feedback != null) {
+                    // 这里可以添加发送反馈到服务器的逻辑
+                    LOG.info("用户点赞反馈: " + feedback);
+                    likeButton.setText("👍");
+                    likeButton.setEnabled(false);
+                    likeButton.setForeground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
+                }
+            });
+            
+            // 点踩按钮
+            JButton dislikeButton = new JButton("👎");
+            dislikeButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 11));  // 字体稍小
+            dislikeButton.setBorder(BorderFactory.createEmptyBorder(3, 2, 3, 2));  // 进一步减少内边距
+            dislikeButton.setFocusPainted(false);
+            dislikeButton.setContentAreaFilled(false);
+            dislikeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            dislikeButton.addActionListener(e -> {
+                String feedback = showFeedbackDialog("改进建议", "请告诉我们您认为需要改进的地方：");
+                if (feedback != null) {
+                    // 这里可以添加发送反馈到服务器的逻辑
+                    LOG.info("用户点踩反馈: " + feedback);
+                    dislikeButton.setText("👎");
+                    dislikeButton.setEnabled(false);
+                    dislikeButton.setForeground(new JBColor(new Color(0xDC3545), new Color(0xDC3545)));
+                }
+            });
+
+            rightPanel.add(generateButton);
+            rightPanel.add(likeButton);
+            rightPanel.add(dislikeButton);
+
+            headerPanel.add(leftPanel, BorderLayout.WEST);
+            headerPanel.add(rightPanel, BorderLayout.EAST);
+
+            panel.add(headerPanel);
+            panel.add(codeScroll);
         } else {
-            // 非Java文件只显示摘要
-            JLabel summaryLabel = new JLabel("代码片段");
-            summaryLabel.setFont(new Font(Font.MONOSPACED, Font.BOLD, 13));
-            summaryLabel.setForeground(JBColor.foreground());
-            summaryLabel.setBorder(JBUI.Borders.empty(8, 16, 8, 16));
-            panel.add(summaryLabel);
+            // 非代码消息 - 直接显示文本
+            JPanel textPanel = new JPanel();
+            textPanel.setLayout(new BoxLayout(textPanel, BoxLayout.Y_AXIS));
+            textPanel.setOpaque(true);
+            textPanel.setBackground(new JBColor(new Color(240, 242, 247), new Color(60, 60, 60)));
+            textPanel.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
+            
+            JLabel textLabel = new JLabel("<html>" + content.replace("\n", "<br>") + "</html>");
+            textLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
+            textLabel.setForeground(new JBColor(new Color(31, 35, 40), new Color(230, 237, 243)));
+            textLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            
+            textPanel.add(textLabel);
+            panel.add(textPanel);
         }
-        // 非Java文件不显示任何按钮
 
         outerPanel.add(panel);
         return outerPanel;
     }
 
-    // 提取Java类/接口/枚举声明行，只显示类名.java
-    private String extractJavaClassLine(String code) {
-        String[] lines = code.split("\n");
+    /**
+     * 判断内容是否为Java代码
+     */
+    private boolean isJavaCode(String content) {
+        if (content == null || content.trim().isEmpty()) {
+            return false;
+        }
+        
+        // 检查是否包含Java关键特征
+        return content.contains("package ") || 
+               content.contains("public class ") || 
+               content.contains("class ") ||
+               content.contains("public interface ") || 
+               content.contains("interface ") ||
+               content.contains("public enum ") || 
+               content.contains("enum ") ||
+               (content.contains("import ") && content.contains("public "));
+    }
+
+    /**
+     * 提取Java类名
+     */
+    private String extractClassName(String content) {
+        if (content == null) return "Java代码.java";
+        
+        String[] lines = content.split("\n");
         for (String line : lines) {
             String trim = line.trim();
+            // 查找类声明
             if (trim.startsWith("public class ") || trim.startsWith("class ")) {
-                return extractName(trim, "class");
-            } else if (trim.startsWith("public interface ") || trim.startsWith("interface ")) {
-                return extractName(trim, "interface");
-            } else if (trim.startsWith("public enum ") || trim.startsWith("enum ")) {
-                return extractName(trim, "enum");
+                return extractNameFromLine(trim, "class");
+            } 
+            // 查找接口声明
+            else if (trim.startsWith("public interface ") || trim.startsWith("interface ")) {
+                return extractNameFromLine(trim, "interface");
+            } 
+            // 查找枚举声明
+            else if (trim.startsWith("public enum ") || trim.startsWith("enum ")) {
+                return extractNameFromLine(trim, "enum");
             }
         }
         return "Java代码.java";
     }
-    // 提取名称并加.java后缀
-    private String extractName(String line, String keyword) {
-        String[] parts = line.split(keyword);
-        if (parts.length > 1) {
-            String name = parts[1].trim().split("[\\s\\{]")[0];
-            return name + ".java";
+
+    /**
+     * 从声明行中提取名称
+     */
+    private String extractNameFromLine(String line, String keyword) {
+        try {
+            String[] parts = line.split("\\b" + keyword + "\\b");
+            if (parts.length > 1) {
+                String namepart = parts[1].trim();
+                // 获取第一个单词作为类名
+                String[] words = namepart.split("[\\s\\{<]");
+                if (words.length > 0 && !words[0].trim().isEmpty()) {
+                    return words[0].trim() + ".java";
+                }
+            }
+        } catch (Exception e) {
+            // 如果解析失败，返回默认值
         }
         return "Java代码.java";
     }
@@ -804,30 +924,21 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                 addAssistantMessage(message);
                 LOG.info("助手消息添加完成");
 
-                // 检查是否是"所有代码均已生成"消息或错误消息
-                if ("所有代码均已生成".equals(message.trim()) ||
-                    (message.contains("ERROR") || message.contains("错误") || message.contains("失败"))) {
-                    LOG.info("收到完成或错误消息，恢复发送按钮状态");
-                    // 恢复发送按钮状态
+                // 检查是否是"所有代码均已生成"消息
+                if ("所有代码均已生成".equals(message.trim())) {
+                    LOG.info("收到代码生成完成消息，恢复发送按钮状态");
+                    // 恢复发送按钮状态和输入框可编辑状态
                     isWaitingForGeneration = false;
+                    inputField.setEditable(true);
                     updateSendButtonForSend();
 
-                    // 如果是成功完成的消息，检查是否需要显示批量生成按钮
-                    if ("所有代码均已生成".equals(message.trim())) {
-                        boolean hasJavaCode = chatMessages.stream()
-                            .filter(msg -> !msg.isUser())
-                            .anyMatch(msg -> {
-                                String content = msg.getContent();
-                                return content != null &&
-                                       (content.contains("class ") ||
-                                        content.contains("interface ") ||
-                                        content.contains("enum ")) &&
-                                       content.trim().startsWith("package ");
-                            });
+                    // 检查是否有Java代码消息，如果有则显示批量生成按钮
+                    boolean hasJavaCode = chatMessages.stream()
+                        .filter(msg -> !msg.isUser())
+                        .anyMatch(msg -> isJavaCode(msg.getContent()));
 
-                        if (hasJavaCode) {
-                            addBatchGenerateButton();
-                        }
+                    if (hasJavaCode) {
+                        addBatchGenerateButton();
                     }
                 }
 
@@ -881,7 +992,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         for (ChatMessage message : chatMessages) {
             if (!message.isUser() && !message.isGenerated()) {
                 String content = message.getContent();
-                if (content != null && (content.contains("class ") || content.contains("interface ") || content.contains("enum "))) {
+                if (isJavaCode(content)) {
                     if (CodeGenerationService.getInstance(project).generateJavaFile(content, false, targetDir)) {
                         successCount[0]++;
                         message.setGenerated(true);
@@ -1098,26 +1209,53 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     }
 
     /**
-     * 释放资源
+     * 显示反馈对话框
      */
-    private void showFeedbackDialog(String title) {
-        JTextArea feedbackArea = new JTextArea(5, 30);
+    private String showFeedbackDialog(String title, String message) {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(JBUI.Borders.empty(10));
+        
+        // 提示信息
+        JLabel messageLabel = new JLabel(message);
+        messageLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
+        panel.add(messageLabel, BorderLayout.NORTH);
+        
+        // 输入区域
+        JTextArea feedbackArea = new JTextArea(4, 30);
         feedbackArea.setLineWrap(true);
         feedbackArea.setWrapStyleWord(true);
+        feedbackArea.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 13));
+        feedbackArea.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
+        
         JScrollPane scrollPane = new JScrollPane(feedbackArea);
+        scrollPane.setBorder(BorderFactory.createLineBorder(new JBColor(new Color(200, 200, 200), new Color(100, 100, 100)), 1));
+        scrollPane.setPreferredSize(new Dimension(350, 100));
+        
+        // 添加间距
+        panel.add(Box.createVerticalStrut(10), BorderLayout.CENTER);
+        panel.add(scrollPane, BorderLayout.SOUTH);
+        
         int result = JOptionPane.showConfirmDialog(
             this,
-            scrollPane,
-            title + "（请留下您的宝贵意见）",
+            panel,
+            title,
             JOptionPane.OK_CANCEL_OPTION,
             JOptionPane.PLAIN_MESSAGE
         );
+        
         if (result == JOptionPane.OK_OPTION) {
             String feedback = feedbackArea.getText().trim();
             if (!feedback.isEmpty()) {
-                // 这里可以扩展为发送到服务器等
-                JOptionPane.showMessageDialog(this, "感谢您的反馈！", "反馈成功", JOptionPane.INFORMATION_MESSAGE);
+                JOptionPane.showMessageDialog(
+                    this, 
+                    "感谢您的反馈！我们会认真考虑您的建议。", 
+                    "反馈已提交", 
+                    JOptionPane.INFORMATION_MESSAGE
+                );
+                return feedback;
             }
         }
+        
+        return null;
     }
 } 
