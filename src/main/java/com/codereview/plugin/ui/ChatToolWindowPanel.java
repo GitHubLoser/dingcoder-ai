@@ -601,7 +601,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             generateButton.addActionListener(e -> {
                 CodeGenerationService codeGenService = CodeGenerationService.getInstance(project);
                 if (codeGenService.generateJavaFile(content, true)) {
-                    generateButton.setText("✓ 已生成");
+                    generateButton.setText("✓ 重新生成");
                     generateButton.setEnabled(true);
                     generateButton.setBackground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
                     
