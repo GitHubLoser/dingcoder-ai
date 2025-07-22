@@ -200,19 +200,23 @@ public final class CodeGenerationService {
         VirtualFile selectedDir = getCurrentSelectedDirectory();
         if (selectedDir != null) {
             if (showDialog) {
-                int result = JOptionPane.showConfirmDialog(
+                // 使用自定义按钮，只有"是"和"取消"，去掉"否"按钮
+                String[] options = {"是", "取消"};
+                int result = JOptionPane.showOptionDialog(
                     null,
                     "检测到选中目录: " + selectedDir.getPath() + "\n是否在此目录生成文件？",
                     "目录确认",
-                    JOptionPane.YES_NO_CANCEL_OPTION,
-                    JOptionPane.QUESTION_MESSAGE
+                    JOptionPane.YES_NO_OPTION,
+                    JOptionPane.QUESTION_MESSAGE,
+                    null,
+                    options,
+                    options[0]  // 默认选择"是"
                 );
-                if (result == JOptionPane.YES_OPTION) {
+                if (result == 0) {  // 选择"是"
                     return selectedDir;
-                } else if (result == JOptionPane.CANCEL_OPTION) {
+                } else {  // 选择"取消"或关闭对话框
                     return null;
                 }
-                // 如果选择NO，继续到目录选择对话框
             } else {
                 return selectedDir; // 批量生成时直接使用选中目录
             }

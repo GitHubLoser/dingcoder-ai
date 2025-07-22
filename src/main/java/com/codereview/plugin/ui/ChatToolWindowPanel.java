@@ -393,6 +393,12 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             JOptionPane.showMessageDialog(this, "登录状态未同步，请稍后再试", "提示", JOptionPane.WARNING_MESSAGE);
             return;
         }
+        
+        // 检查当前选择的路径是否正确
+        if (!checkSelectedPath()) {
+            return; // 路径检查失败，不继续执行
+        }
+        
         addUserMessage(input);
         inputField.setText("");
         isWaitingForGeneration = true;
@@ -1264,6 +1270,107 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         }
         
         return null;
+    }
+
+    /**
+     * 检查当前选择的路径是否正确
+     */
+    private boolean checkSelectedPath() {
+        VirtualFile selectedDir = CodeGenerationService.getInstance(project).getCurrentSelectedDirectory();
+        
+        if (selectedDir == null) {
+            showPathSelectionDialog("未选择目录", 
+                "请在项目视图中选择一个Java源码目录，例如：\n" +
+                "• src/main/java/com/yourpackage\n" +
+                "• src/java/com/yourpackage\n\n" +
+                "选择正确的路径后，生成的代码会包含正确的package声明。");
+            return false;
+        }
+        
+        String path = selectedDir.getPath();
+        LOG.info("当前选择路径: " + path);
+        
+        // 检查是否在Java源码目录下
+        boolean isJavaSourceDir = path.contains("/src/main/java") || path.contains("/src/java") || 
+                                  path.contains("\\src\\main\\java") || path.contains("\\src\\java");
+        
+        if (!isJavaSourceDir) {
+            showPathSelectionDialog("路径选择错误", 
+                "当前选择的路径不是Java源码目录！\n\n" +
+                "当前路径：" + path + "\n\n" +
+                "请选择Java源码目录，例如：\n" +
+                "• src/main/java/com/yourpackage\n" +
+                "• src/java/com/yourpackage\n\n" +
+                "这样生成的代码才能包含正确的package声明。");
+            return false;
+        }
+        
+        // 检查是否在com包下（推荐但不强制）
+        boolean isUnderComPackage = path.contains("/com/") || path.contains("\\com\\");
+        
+        if (!isUnderComPackage) {
+            int result = JOptionPane.showConfirmDialog(
+                this,
+                "当前路径不在com包下，生成的代码可能没有package声明。\n\n" +
+                "当前路径：" + path + "\n\n" +
+                "建议选择com包下的目录，例如：\n" +
+                "• src/main/java/com/yourpackage\n\n" +
+                "是否继续生成？",
+                "路径提醒",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE
+            );
+            
+            return result == JOptionPane.YES_OPTION;
+        }
+        
+        return true;
+    }
+    
+    /**
+     * 显示路径选择对话框
+     */
+    private void showPathSelectionDialog(String title, String message) {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(JBUI.Borders.empty(15));
+        
+        // 错误图标和消息
+        JPanel messagePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        messagePanel.setOpaque(false);
+        
+        JLabel iconLabel = new JLabel("⚠️");
+        iconLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 20));
+        iconLabel.setBorder(JBUI.Borders.emptyRight(10));
+        
+        JLabel messageLabel = new JLabel("<html>" + message.replace("\n", "<br>") + "</html>");
+        messageLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 13));
+        
+        messagePanel.add(iconLabel);
+        messagePanel.add(messageLabel);
+        panel.add(messagePanel, BorderLayout.CENTER);
+        
+        // 操作说明
+        JPanel instructionPanel = new JPanel(new BorderLayout());
+        instructionPanel.setOpaque(false);
+        instructionPanel.setBorder(JBUI.Borders.emptyTop(15));
+        
+        JLabel instructionLabel = new JLabel("<html><b>操作步骤：</b><br>" +
+            "1. 在IDEA左侧项目视图中展开项目<br>" +
+            "2. 找到 src → main → java → com → 你的包名<br>" +
+            "3. 右键点击包名文件夹，选择该目录<br>" +
+            "4. 再次点击发送按钮</html>");
+        instructionLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
+        instructionLabel.setForeground(new JBColor(new Color(100, 100, 100), new Color(150, 150, 150)));
+        
+        instructionPanel.add(instructionLabel, BorderLayout.CENTER);
+        panel.add(instructionPanel, BorderLayout.SOUTH);
+        
+        JOptionPane.showMessageDialog(
+            this,
+            panel,
+            title,
+            JOptionPane.WARNING_MESSAGE
+        );
     }
 
     /**
