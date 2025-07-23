@@ -913,6 +913,16 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     private void onMQTTMessage(String message) {
         LOG.info("收到MQTT消息回调: " + message);
 
+        // 检查是否有msgMapping（表示这是新格式的代码消息）
+        MQTTService mqttService = MQTTService.getInstance();
+        String msgMapping = mqttService.getCodeGenerationMsgMapping();
+        if (msgMapping != null) {
+            LOG.info("检测到msgMapping，这是新格式代码消息: " + msgMapping);
+            // 清除已使用的msgMapping
+            mqttService.clearCodeGenerationMsgMapping();
+            // 后续可以根据msgMapping做特殊处理
+        }
+
         // 如果是超时消息，重置状态
         if ("操作超时，请重试".equals(message)) {
             SwingUtilities.invokeLater(() -> {

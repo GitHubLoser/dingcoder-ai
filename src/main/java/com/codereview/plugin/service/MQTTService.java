@@ -44,6 +44,9 @@ public final class MQTTService {
     // 添加消息缓存队列
     private final java.util.Queue<String> pendingMessages = new java.util.LinkedList<>();
     private final Object messageLock = new Object();
+    
+    // 代码生成模块的msgMapping存储
+    private String lastCodeGenerationMsgMapping = null;
 
     /**
      * 获取MQTT服务实例
@@ -190,19 +193,36 @@ public final class MQTTService {
             JsonNode msgData = rootNode.get("msgData");
 
             if (msgData != null) {
+                // 优先检查code字段（新格式 - 代码生成）
+                JsonNode codeNode = msgData.get("code");
+                if (codeNode != null && !codeNode.asText().trim().isEmpty()) {
+                    String code = codeNode.asText();
+                    LOG.info("解析出code内容，长度: " + code.length());
+                    
+                    // code和msgMapping一起处理 - 只有有code时才提取msgMapping
+                    JsonNode msgMappingNode = msgData.get("msgMapping");
+                    if (msgMappingNode != null) {
+                        String msgMapping = msgMappingNode.asText();
+                        LOG.info("解析出msgMapping: " + msgMapping);
+                        // 暂存msgMapping供代码生成功能使用
+                        lastCodeGenerationMsgMapping = msgMapping;
+                    }
+                    
+                    return code;
+                }
+                
+                // 回退到text字段（兼容旧格式和状态消息）
                 JsonNode textNode = msgData.get("text");
                 if (textNode != null) {
                     String text = textNode.asText();
-                    LOG.info("成功解析出text内容: " + text);
+                    LOG.info("解析出text内容: " + text);
                     return text;
-                } else {
-                    LOG.warn("msgData中未找到text字段");
                 }
             } else {
                 LOG.warn("JSON中未找到msgData字段");
             }
 
-            LOG.warn("未找到msgData.text字段，原始消息: " + jsonContent);
+            LOG.warn("未找到有效内容字段，原始消息: " + jsonContent);
             return null;
 
         } catch (Exception e) {
@@ -275,7 +295,9 @@ public final class MQTTService {
                 topicCallbacks.clear();
                 // 清空缓存消息
                 pendingMessages.clear();
-                LOG.info("已清空缓存消息队列");
+                // 清空代码生成msgMapping
+                lastCodeGenerationMsgMapping = null;
+                LOG.info("已清空缓存消息队列和msgMapping");
             }
         } catch (Exception e) {
             LOG.error("断开MQTT连接时出错", e);
@@ -315,6 +337,7 @@ public final class MQTTService {
                 currentUserSid = null;
                 topicCallbacks.clear();
                 pendingMessages.clear();
+                lastCodeGenerationMsgMapping = null;
                 
                 LOG.info("MQTT服务资源清理完成");
             }
@@ -361,5 +384,20 @@ public final class MQTTService {
      */
     public Consumer<String> getMessageCallback() {
         return getMessageCallback(FUNCTION_CODE_GENERATION);
+    }
+
+    /**
+     * 获取代码生成的最后一次msgMapping
+     * @return msgMapping字符串，如果没有则返回null
+     */
+    public String getCodeGenerationMsgMapping() {
+        return lastCodeGenerationMsgMapping;
+    }
+
+    /**
+     * 清除代码生成的msgMapping
+     */
+    public void clearCodeGenerationMsgMapping() {
+        this.lastCodeGenerationMsgMapping = null;
     }
 }
