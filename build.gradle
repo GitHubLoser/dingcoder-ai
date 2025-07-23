@@ -45,6 +45,9 @@ dependencies {
     // Apache Commons Lang3 - StringUtils支持
     implementation 'org.apache.commons:commons-lang3:3.12.0'
     
+    // Apache Commons Text - StringUtils支持
+    implementation 'org.apache.commons:commons-text:1.10.0'
+    
     // HTTP客户端支持
     implementation 'org.apache.httpcomponents:httpclient:4.5.13'
     
@@ -67,6 +70,7 @@ dependencies {
     // 日志依赖
     implementation 'org.slf4j:slf4j-api:1.7.36'
     testImplementation 'ch.qos.logback:logback-classic:1.2.12'
+    implementation 'cn.hutool:hutool-json:5.8.22'
 }
 
 // 配置IntelliJ IDEA插件

@@ -14,6 +14,9 @@ import java.util.ArrayList;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.concurrent.ConcurrentHashMap;
+import org.apache.commons.text.StringEscapeUtils;
+import cn.hutool.json.JSONObject;
+import cn.hutool.json.JSONUtil;
 
 /**
  * MQTT服务类
@@ -189,42 +192,33 @@ public final class MQTTService {
     private String parseMessageContent(String jsonContent) {
         try {
             LOG.info("开始解析JSON消息: " + jsonContent);
-            JsonNode rootNode = objectMapper.readTree(jsonContent);
-            JsonNode msgData = rootNode.get("msgData");
-
+            // 先用Hutool解析外层
+            cn.hutool.json.JSONObject root = cn.hutool.json.JSONUtil.parseObj(jsonContent);
+            cn.hutool.json.JSONObject msgData = root.getJSONObject("msgData");
             if (msgData != null) {
-                // 优先检查code字段（新格式 - 代码生成）
-                JsonNode codeNode = msgData.get("code");
-                if (codeNode != null && !codeNode.asText().trim().isEmpty()) {
-                    String code = codeNode.asText();
-                    LOG.info("解析出code内容，长度: " + code.length());
-                    
-                    // code和msgMapping一起处理 - 只有有code时才提取msgMapping
-                    JsonNode msgMappingNode = msgData.get("msgMapping");
-                    if (msgMappingNode != null) {
-                        String msgMapping = msgMappingNode.asText();
-                        LOG.info("解析出msgMapping: " + msgMapping);
-                        // 暂存msgMapping供代码生成功能使用
+                String text = msgData.getStr("text");
+                LOG.info("解析出text内容: " + text);
+
+                // 手动提取code和msgMapping，兼容物理换行
+                int codeStart = text.indexOf("\"code\":\"");
+                int msgMappingStart = text.indexOf("\",\"msgMapping\":\"");
+                if (codeStart != -1 && msgMappingStart != -1) {
+                    codeStart += 8;
+                    String code = text.substring(codeStart, msgMappingStart);
+                    int msgMappingEnd = text.lastIndexOf("\"}");
+                    String msgMapping = null;
+                    if (msgMappingEnd > msgMappingStart) {
+                        msgMappingStart += 17;
+                        msgMapping = text.substring(msgMappingStart, msgMappingEnd);
                         lastCodeGenerationMsgMapping = msgMapping;
                     }
-                    
                     return code;
                 }
-                
-                // 回退到text字段（兼容旧格式和状态消息）
-                JsonNode textNode = msgData.get("text");
-                if (textNode != null) {
-                    String text = textNode.asText();
-                    LOG.info("解析出text内容: " + text);
-                    return text;
-                }
-            } else {
-                LOG.warn("JSON中未找到msgData字段");
+                // 如果不是新格式，直接返回text
+                return text;
             }
-
             LOG.warn("未找到有效内容字段，原始消息: " + jsonContent);
             return null;
-
         } catch (Exception e) {
             LOG.error("解析JSON消息失败: " + jsonContent, e);
             return null;
@@ -387,6 +381,65 @@ public final class MQTTService {
     }
 
     /**
+     * 从text中提取code内容
+     * 格式：{"code":"代码内容","msgMapping":"..."}
+     */
+    private String extractCodeFromText(String text) {
+        try {
+            // 找到 "code":" 的开始位置
+            String codePrefix = "\"code\":\"";
+            int codeStart = text.indexOf(codePrefix);
+            if (codeStart == -1) {
+                return null;
+            }
+            codeStart += codePrefix.length();
+            
+            // 找到 ","msgMapping": 的位置作为code内容的结束
+            String msgMappingPrefix = "\",\"msgMapping\":";
+            int codeEnd = text.indexOf(msgMappingPrefix, codeStart);
+            if (codeEnd == -1) {
+                return null;
+            }
+            
+            // 提取code内容
+            return text.substring(codeStart, codeEnd);
+        } catch (Exception e) {
+            LOG.error("提取code内容失败", e);
+            return null;
+        }
+    }
+    
+    /**
+     * 从text中提取msgMapping内容
+     * 格式：{"code":"...","msgMapping":"{"key":"value"}"}
+     */
+    private String extractMsgMappingFromText(String text) {
+        try {
+            // 找到 "msgMapping":" 的开始位置
+            String msgMappingPrefix = "\"msgMapping\":\"";
+            int mappingStart = text.indexOf(msgMappingPrefix);
+            if (mappingStart == -1) {
+                return null;
+            }
+            mappingStart += msgMappingPrefix.length();
+            
+            // 从后往前找，找到倒数第二个 " 的位置（最后一个"是整个JSON的结束）
+            int lastQuote = text.lastIndexOf("\"");
+            int secondLastQuote = text.lastIndexOf("\"", lastQuote - 1);
+            
+            if (secondLastQuote == -1 || secondLastQuote <= mappingStart) {
+                return null;
+            }
+            
+            // 提取msgMapping内容
+            return text.substring(mappingStart, secondLastQuote);
+        } catch (Exception e) {
+            LOG.error("提取msgMapping内容失败", e);
+            return null;
+        }
+    }
+
+    /**
      * 获取代码生成的最后一次msgMapping
      * @return msgMapping字符串，如果没有则返回null
      */
@@ -400,4 +453,6 @@ public final class MQTTService {
     public void clearCodeGenerationMsgMapping() {
         this.lastCodeGenerationMsgMapping = null;
     }
+
+
 }
