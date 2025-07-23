@@ -607,12 +607,31 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             generateButton.addActionListener(e -> {
                 CodeGenerationService codeGenService = CodeGenerationService.getInstance(project);
                 if (codeGenService.generateJavaFile(content, true)) {
-                    generateButton.setText("✓ 重新生成");
-                    generateButton.setEnabled(true);
+                    generateButton.setText("✓ 已生成");
+                    generateButton.setEnabled(false);
                     generateButton.setBackground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
                     
                     // 记录代码生成统计
                     recordCodeGenerationEvent(content, className, true);
+
+                    // 写入msgMapping到多语言文件
+                    try {
+                        String msgMapping = com.codereview.plugin.service.MQTTService.getInstance().getCodeGenerationMsgMapping();
+                        LOG.info("[多语言] 当前msgMapping内容: " + msgMapping);
+                        if (msgMapping != null && !msgMapping.trim().isEmpty()) {
+                            // 解析msgMapping为key-value
+                            cn.hutool.json.JSONObject mappingObj = cn.hutool.json.JSONUtil.parseObj(msgMapping);
+                            for (String key : mappingObj.keySet()) {
+                                String value = mappingObj.getStr(key);
+                                LOG.info("[多语言] 写入 key=" + key + ", value=" + value);
+                                com.codereview.plugin.GenerateMessageMappingService.writeUnicodeProperties(key, value);
+                            }
+                        } else {
+                            LOG.info("[多语言] 未检测到msgMapping内容，无需写入");
+                        }
+                    } catch (Exception ex) {
+                        LOG.error("[多语言] 写入多语言文件失败", ex);
+                    }
                 }
             });
             
