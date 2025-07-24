@@ -89,8 +89,9 @@ public final class MQTTService {
             mqttClient.setCallback(new MqttCallback() {
                 @Override
                 public void connectionLost(Throwable cause) {
-                    LOG.warn("MQTT连接丢失，原因: " + cause.getMessage());
+                    LOG.warn("MQTT连接丢失，原因: " + cause.getMessage(), cause);
                     isConnected = false;
+                    LOG.info("[MQTT] 已触发自动重连机制（Paho自动重连开启，setAutomaticReconnect=true）。请关注后续连接成功或失败日志。");
                 }
 
                 @Override
@@ -152,6 +153,7 @@ public final class MQTTService {
             // 建立连接
             mqttClient.connect(options);
             LOG.info("已连接到 MQTT Broker: " + BROKER);
+            LOG.info("[MQTT] 连接建立成功。如果之前有断开，说明自动重连已恢复。");
 
             // 订阅代码生成主题（保持原有格式）
             String codeGenTopic = TOPIC_PREFIX + userSid;
@@ -164,19 +166,6 @@ public final class MQTTService {
             LOG.info("已订阅代码审查 Topic: " + codeReviewTopic);
 
             isConnected = true;
-
-            // 连接成功后，主动通知UI注册回调
-            try {
-                com.codereview.plugin.ui.ChatToolWindowPanel chatPanel = com.codereview.plugin.ui.ChatToolWindowPanel.getInstance();
-                if (chatPanel != null) {
-                    LOG.info("MQTT连接成功后，主动通知ChatToolWindowPanel注册code_generation回调");
-                    chatPanel.ensureCodeGenerationMqttCallback();
-                } else {
-                    LOG.warn("MQTT连接成功后，ChatToolWindowPanel实例为null，无法注册回调");
-                }
-            } catch (Exception e) {
-                LOG.error("MQTT连接成功后通知UI注册回调时出错", e);
-            }
 
         } catch (Exception e) {
             LOG.error("MQTT连接失败", e);
@@ -192,42 +181,41 @@ public final class MQTTService {
     public String parseMessageContent(String jsonContent) {
         try {
             LOG.info("开始解析JSON消息: " + jsonContent);
-            // 直接用Hutool解析标准JSON
-            cn.hutool.json.JSONObject root = cn.hutool.json.JSONUtil.parseObj(jsonContent);
-            cn.hutool.json.JSONObject msgData = root.getJSONObject("msgData");
-            if (msgData != null) {
-                String text = msgData.getStr("text");
-                LOG.info("解析出text内容: " + text);
-                // 新格式：text本身是一个JSON字符串，包含code和msgMapping
-                try {
-                    cn.hutool.json.JSONObject textObj = cn.hutool.json.JSONUtil.parseObj(text);
-                    String code = textObj.getStr("code");
-                    String msgMapping = textObj.getStr("msgMapping");
-                    if (msgMapping != null) {
-                        // 解析为map
-                        try {
-                            cn.hutool.json.JSONObject mappingObj = cn.hutool.json.JSONUtil.parseObj(msgMapping);
-                            lastCodeGenerationMsgMappingMap = new HashMap<>();
-                            for (String key : mappingObj.keySet()) {
-                                lastCodeGenerationMsgMappingMap.put(key, mappingObj.getStr(key));
-                            }
-                        } catch (Exception ex) {
-                            LOG.warn("msgMapping不是标准JSON，无法转为Map", ex);
-                            lastCodeGenerationMsgMappingMap = null;
+            // 用Jackson获取msgData.text字段的原始JSON字符串
+            com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(jsonContent);
+            com.fasterxml.jackson.databind.JsonNode msgData = root.path("msgData");
+            String text = msgData.path("text").toString(); // 带引号和所有转义
+            if (text != null && text.length() >= 2 && text.startsWith("\"") && text.endsWith("\"")) {
+                text = text.substring(1, text.length() - 1);
+            }
+            // 反转义，得到标准JSON字符串
+            text = org.apache.commons.text.StringEscapeUtils.unescapeJava(text);
+            LOG.info("[raw] unescape后text内容: " + text);
+            // 新格式：text本身是一个JSON字符串，包含code和msgMapping
+            try {
+                cn.hutool.json.JSONObject textObj = cn.hutool.json.JSONUtil.parseObj(text);
+                String code = textObj.getStr("code");
+                String msgMapping = textObj.getStr("msgMapping");
+                if (msgMapping != null) {
+                    try {
+                        cn.hutool.json.JSONObject mappingObj = cn.hutool.json.JSONUtil.parseObj(msgMapping);
+                        lastCodeGenerationMsgMappingMap = new java.util.HashMap<>();
+                        for (String key : mappingObj.keySet()) {
+                            lastCodeGenerationMsgMappingMap.put(key, mappingObj.getStr(key));
                         }
-                    } else {
+                    } catch (Exception ex) {
+                        LOG.warn("msgMapping不是标准JSON，无法转为Map", ex);
                         lastCodeGenerationMsgMappingMap = null;
                     }
-                    return code != null ? code : text;
-                } catch (Exception e) {
-                    LOG.warn("text字段不是标准JSON，直接返回原文", e);
+                } else {
                     lastCodeGenerationMsgMappingMap = null;
-                    return text;
                 }
+                return code != null ? code : text;
+            } catch (Exception e) {
+                LOG.warn("text字段不是标准JSON，直接返回text", e);
+                lastCodeGenerationMsgMappingMap = null;
+                return text;
             }
-            LOG.warn("未找到有效内容字段，原始消息: " + jsonContent);
-            lastCodeGenerationMsgMappingMap = null;
-            return null;
         } catch (Exception e) {
             LOG.error("解析JSON消息失败: " + jsonContent, e);
             lastCodeGenerationMsgMappingMap = null;
