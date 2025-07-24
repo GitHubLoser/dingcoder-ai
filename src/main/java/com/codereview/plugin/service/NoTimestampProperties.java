@@ -4,7 +4,9 @@ package com.codereview.plugin.service;
 import java.io.*;
 import java.util.Properties;
 
-
+/**
+ * 忽略时间戳的Properties
+ */
 public class NoTimestampProperties extends Properties {
     @Override
     public void store(OutputStream out, String comments) throws IOException {

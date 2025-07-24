@@ -7,6 +7,9 @@ import org.springframework.web.client.RestTemplate;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * 描述: 代码生成统计服务
+ */
 public class CodeGenerationStatisticsService {
     private static final Logger LOG = Logger.getInstance(CodeGenerationStatisticsService.class);
 

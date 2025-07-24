@@ -6,7 +6,9 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Properties;
 
-
+/**
+ * 多语言文件生成服务
+ */
 public class GenerateMessageMappingService {
 
     private static String findPropertiesFilePath() {
