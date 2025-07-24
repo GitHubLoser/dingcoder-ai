@@ -40,13 +40,11 @@ public final class ReviewService {
 //    private static final String REVIEW_API_URL = "http://192.168.6.15:8085/restful/standard/aide/submitReview";
 
     private final Project project;
-    private final AIService aiService;
     private final AuthService authService;
     private final Gson gson;
 
     public ReviewService(Project project) {
         this.project = project;
-        this.aiService = AIService.getInstance();
         this.authService = AuthService.getInstance();
         this.gson = new Gson();
     }

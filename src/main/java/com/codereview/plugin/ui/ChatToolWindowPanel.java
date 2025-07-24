@@ -46,7 +46,6 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
 
     private final Project project;
     private final AuthService authService;
-    private final AIService aiService;
     private final MQTTService mqttService;
     private final ValidateSpecService validateSpecService;
 
@@ -82,7 +81,6 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         super(new BorderLayout());
         this.project = project;
         this.authService = AuthService.getInstance();
-        this.aiService = AIService.getInstance();
         this.mqttService = MQTTService.getInstance();
         this.validateSpecService = new ValidateSpecService();
         instance = this;
