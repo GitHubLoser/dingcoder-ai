@@ -1,27 +1,17 @@
 package com.codereview.plugin.ui;
 
 import com.codereview.plugin.auth.AuthService;
-import com.codereview.plugin.auth.LoginDialog;
-import com.codereview.plugin.constant.CommonConstant;
-import com.codereview.plugin.model.ChatMessage;
-import com.codereview.plugin.service.AIService;
-import com.codereview.plugin.service.CodeGenerationService;
-import com.codereview.plugin.service.MQTTService;
-import com.codereview.plugin.service.ValidateSpecService;
+import com.codereview.plugin.service.*;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.components.*;
 import com.intellij.util.ui.JBUI;
-import com.intellij.util.ui.UIUtil;
-import org.eclipse.paho.client.mqttv3.MqttMessage;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.AbstractBorder;
-import javax.swing.border.Border;
-import javax.swing.border.CompoundBorder;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
@@ -37,17 +27,10 @@ import java.util.function.Consumer;
 import java.awt.event.ActionListener;
 import java.util.Map;
 import java.util.HashMap;
-import java.util.Arrays;
 
 // 添加编辑器相关的import
-import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.EditorFactory;
-import com.intellij.openapi.editor.EditorSettings;
-import com.intellij.openapi.editor.ex.EditorEx;
-import com.intellij.openapi.editor.colors.EditorColorsManager;
-import com.intellij.openapi.editor.colors.EditorColorsScheme;
-import com.intellij.ide.highlighter.JavaFileType;
 
 /**
  * 聊天界面
@@ -622,25 +605,25 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                     recordCodeGenerationEvent(content, className, true);
 
                     // 写入msgMapping到多语言文件
-//                    try {
-//                        LOG.info("[多语言][DEBUG] 生成文件按钮: message hashCode=" + System.identityHashCode(message) + ", msgMapping=" + message.getMsgMapping() + ", ref=" + System.identityHashCode(message.getMsgMapping()));
-//                        Map<String, String> mappingMap = message.getMsgMapping();
-//                        LOG.info("[多语言] 当前msgMapping Map内容: " + mappingMap);
-//                        if (mappingMap != null && !mappingMap.isEmpty()) {
-//                            for (Map.Entry<String, String> entry : mappingMap.entrySet()) {
-//                                String key = entry.getKey();
-//                                String value = entry.getValue();
-//                                LOG.info("[多语言] 写入 key=" + key + ", value=" + value);
-//                                com.codereview.plugin.GenerateMessageMappingService.writeUnicodeProperties(key, value);
-//                            }
-//                            // 写入完成后再清空msgMapping
-//                            com.codereview.plugin.service.MQTTService.getInstance().clearCodeGenerationMsgMapping();
-//                        } else {
-//                            LOG.info("[多语言] 未检测到msgMapping内容，无需写入");
-//                        }
-//                    } catch (Exception ex) {
-//                        LOG.error("[多语言] 写入多语言文件失败", ex);
-//                    }
+                    try {
+                        LOG.info("[多语言][DEBUG] 生成文件按钮: message hashCode=" + System.identityHashCode(message) + ", msgMapping=" + message.getMsgMapping() + ", ref=" + System.identityHashCode(message.getMsgMapping()));
+                        Map<String, String> mappingMap = message.getMsgMapping();
+                        LOG.info("[多语言] 当前msgMapping Map内容: " + mappingMap);
+                        if (mappingMap != null && !mappingMap.isEmpty()) {
+                            for (Map.Entry<String, String> entry : mappingMap.entrySet()) {
+                                String key = entry.getKey();
+                                String value = entry.getValue();
+                                LOG.info("[多语言] 写入 key=" + key + ", value=" + value);
+                                GenerateMessageMappingService.writeUnicodeProperties(key, value);
+                            }
+                            // 写入完成后再清空msgMapping
+                            com.codereview.plugin.service.MQTTService.getInstance().clearCodeGenerationMsgMapping();
+                        } else {
+                            LOG.info("[多语言] 未检测到msgMapping内容，无需写入");
+                        }
+                    } catch (Exception ex) {
+                        LOG.error("[多语言] 写入多语言文件失败", ex);
+                    }
                     // 发送统计接口 type=0
                     LOG.info("[统计] 即将上报 codeId=" + (message.getUuid()) + ", userName=" + com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser() + ", className=" + className + ", type=0");
                     com.codereview.plugin.service.CodeGenerationStatisticsService.getInstance().sendStatistics(

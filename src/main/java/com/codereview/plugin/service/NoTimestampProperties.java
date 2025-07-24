@@ -1,4 +1,4 @@
-package com.codereview.plugin;
+package com.codereview.plugin.service;
 
 
 import java.io.*;
