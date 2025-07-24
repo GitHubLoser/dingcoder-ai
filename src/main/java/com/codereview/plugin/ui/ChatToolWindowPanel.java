@@ -918,7 +918,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         batchGeneratePanel.setBorder(JBUI.Borders.empty(8, 16, 8, 16));
 
         // 创建批量生成按钮
-        JButton batchGenerateButton = new JButton("批量生成全部文件");
+        JButton batchGenerateButton = new JButton("生成全部文件");
         batchGenerateButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
         batchGenerateButton.setForeground(JBColor.foreground());
         batchGenerateButton.setBackground(new JBColor(new Color(0x2B5AB8), new Color(0x2B5AB8)));
