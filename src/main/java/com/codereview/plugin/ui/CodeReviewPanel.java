@@ -281,10 +281,12 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         
         addFileButton = new JButton("+ 添加文件");
         addFileButton.addActionListener(this::onAddFile);
+        addFileButton.setForeground(com.intellij.ui.JBColor.foreground());
         buttonPanel.add(addFileButton);
         
         reviewFileButton = new JButton("开始评审");
         reviewFileButton.addActionListener(this::onReviewFiles);
+        reviewFileButton.setForeground(com.intellij.ui.JBColor.foreground());
         buttonPanel.add(reviewFileButton);
         
         resetButton = new JButton("重置");
@@ -293,7 +295,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         resetButton.setPreferredSize(reviewFileButton.getPreferredSize());
         resetButton.setFont(reviewFileButton.getFont());
         resetButton.setBackground(reviewFileButton.getBackground());
-        resetButton.setForeground(reviewFileButton.getForeground());
+        resetButton.setForeground(com.intellij.ui.JBColor.foreground());
         resetButton.setBorder(reviewFileButton.getBorder());
         resetButton.setFocusPainted(reviewFileButton.isFocusPainted());
         resetButton.setContentAreaFilled(reviewFileButton.isContentAreaFilled());
@@ -326,7 +328,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         reviewChangesButton.setPreferredSize(new Dimension(100, 30)); // 按钮大小不变
         reviewChangesButton.setFont(reviewFileButton.getFont());
         reviewChangesButton.setBackground(reviewFileButton.getBackground());
-        reviewChangesButton.setForeground(reviewFileButton.getForeground());
+        reviewChangesButton.setForeground(com.intellij.ui.JBColor.foreground());
         reviewChangesButton.setBorder(reviewFileButton.getBorder());
         reviewChangesButton.setFocusPainted(reviewFileButton.isFocusPainted());
         reviewChangesButton.setContentAreaFilled(reviewFileButton.isContentAreaFilled());
@@ -2299,7 +2301,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         confirmButton.setPreferredSize(new Dimension(80, 32));
         confirmButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
         confirmButton.setBackground(new Color(33, 150, 243));
-        confirmButton.setForeground(Color.WHITE);
+        confirmButton.setForeground(com.intellij.ui.JBColor.foreground());
         confirmButton.setFocusPainted(false);
         confirmButton.setBorderPainted(false);
         
@@ -2308,7 +2310,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         cancelButton.setPreferredSize(new Dimension(80, 32));
         cancelButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
         cancelButton.setBackground(new Color(158, 158, 158));
-        cancelButton.setForeground(Color.WHITE);
+        cancelButton.setForeground(com.intellij.ui.JBColor.foreground());
         cancelButton.setFocusPainted(false);
         cancelButton.setBorderPainted(false);
         
