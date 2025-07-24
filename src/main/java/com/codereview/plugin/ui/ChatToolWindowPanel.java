@@ -35,6 +35,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 import java.awt.event.ActionListener;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.Arrays;
 
 // 添加编辑器相关的import
 import com.intellij.openapi.editor.Document;
@@ -462,7 +465,11 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
 
     private void addAssistantMessage(String message) {
         LOG.info("开始添加助手消息");
-        ChatMessage chatMessage = new ChatMessage(message, false);
+        // 绑定当前msgMapping副本
+        Map<String, String> mappingMap = mqttService.getCodeGenerationMsgMappingMap();
+        LOG.info("[多语言][DEBUG] addAssistantMessage mappingMap before new ChatMessage: " + mappingMap + ", ref=" + System.identityHashCode(mappingMap));
+        ChatMessage chatMessage = new ChatMessage(message, false, mappingMap);
+        LOG.info("[多语言][DEBUG] addAssistantMessage mappingMap in ChatMessage: " + chatMessage.getMsgMapping() + ", ref=" + System.identityHashCode(chatMessage.getMsgMapping()));
         chatMessages.add(chatMessage);
         updateChatDisplay();
         LOG.info("助手消息添加完成");
@@ -615,26 +622,29 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                     recordCodeGenerationEvent(content, className, true);
 
                     // 写入msgMapping到多语言文件
-                    try {
-                        java.util.Map<String, String> mappingMap = com.codereview.plugin.service.MQTTService.getInstance().getCodeGenerationMsgMappingMap();
-                        LOG.info("[多语言] 当前msgMapping Map内容: " + mappingMap);
-                        if (mappingMap != null && !mappingMap.isEmpty()) {
-                            for (java.util.Map.Entry<String, String> entry : mappingMap.entrySet()) {
-                                String key = entry.getKey();
-                                String value = entry.getValue();
-                                LOG.info("[多语言] 写入 key=" + key + ", value=" + value);
-                                com.codereview.plugin.GenerateMessageMappingService.writeUnicodeProperties(key, value);
-                            }
-                        } else {
-                            LOG.info("[多语言] 未检测到msgMapping内容，无需写入");
-                        }
-                    } catch (Exception ex) {
-                        LOG.error("[多语言] 写入多语言文件失败", ex);
-                    }
+//                    try {
+//                        LOG.info("[多语言][DEBUG] 生成文件按钮: message hashCode=" + System.identityHashCode(message) + ", msgMapping=" + message.getMsgMapping() + ", ref=" + System.identityHashCode(message.getMsgMapping()));
+//                        Map<String, String> mappingMap = message.getMsgMapping();
+//                        LOG.info("[多语言] 当前msgMapping Map内容: " + mappingMap);
+//                        if (mappingMap != null && !mappingMap.isEmpty()) {
+//                            for (Map.Entry<String, String> entry : mappingMap.entrySet()) {
+//                                String key = entry.getKey();
+//                                String value = entry.getValue();
+//                                LOG.info("[多语言] 写入 key=" + key + ", value=" + value);
+//                                com.codereview.plugin.GenerateMessageMappingService.writeUnicodeProperties(key, value);
+//                            }
+//                            // 写入完成后再清空msgMapping
+//                            com.codereview.plugin.service.MQTTService.getInstance().clearCodeGenerationMsgMapping();
+//                        } else {
+//                            LOG.info("[多语言] 未检测到msgMapping内容，无需写入");
+//                        }
+//                    } catch (Exception ex) {
+//                        LOG.error("[多语言] 写入多语言文件失败", ex);
+//                    }
                     // 发送统计接口 type=0
-                    LOG.info("[统计] 即将上报 codeId=" + (message instanceof ChatMessage ? ((ChatMessage)message).getUuid() : "null") + ", userName=" + com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser() + ", className=" + className + ", type=0");
+                    LOG.info("[统计] 即将上报 codeId=" + (message.getUuid()) + ", userName=" + com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser() + ", className=" + className + ", type=0");
                     com.codereview.plugin.service.CodeGenerationStatisticsService.getInstance().sendStatistics(
-                        message instanceof ChatMessage ? ((ChatMessage)message).getUuid() : java.util.UUID.randomUUID().toString(),
+                        message.getUuid(),
                         com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser(),
                         className,
                         "0",
@@ -663,9 +673,9 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                     // 记录用户反馈统计
                     recordUserFeedbackEvent(content, "LIKE", feedback);
                     // 发送统计接口 type=1
-                    LOG.info("[统计] 即将上报 codeId=" + (message instanceof ChatMessage ? ((ChatMessage)message).getUuid() : "null") + ", userName=" + com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser() + ", className=" + className + ", type=1, feedbackType=LIKE, feedbackContent=" + feedback);
+                    LOG.info("[统计] 即将上报 codeId=" + (message.getUuid()) + ", userName=" + com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser() + ", className=" + className + ", type=1, feedbackType=LIKE, feedbackContent=" + feedback);
                     com.codereview.plugin.service.CodeGenerationStatisticsService.getInstance().sendStatistics(
-                        message instanceof ChatMessage ? ((ChatMessage)message).getUuid() : java.util.UUID.randomUUID().toString(),
+                        message.getUuid(),
                         com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser(),
                         className,
                         "1",
@@ -694,9 +704,9 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                     // 记录用户反馈统计
                     recordUserFeedbackEvent(content, "DISLIKE", feedback);
                     // 发送统计接口 type=1
-                    LOG.info("[统计] 即将上报 codeId=" + (message instanceof ChatMessage ? ((ChatMessage)message).getUuid() : "null") + ", userName=" + com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser() + ", className=" + className + ", type=1, feedbackType=DISLIKE, feedbackContent=" + feedback);
+                    LOG.info("[统计] 即将上报 codeId=" + (message.getUuid()) + ", userName=" + com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser() + ", className=" + className + ", type=1, feedbackType=DISLIKE, feedbackContent=" + feedback);
                     com.codereview.plugin.service.CodeGenerationStatisticsService.getInstance().sendStatistics(
-                        message instanceof ChatMessage ? ((ChatMessage)message).getUuid() : java.util.UUID.randomUUID().toString(),
+                        message.getUuid(),
                         com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser(),
                         className,
                         "1",
@@ -963,15 +973,12 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
 
     private void onMQTTMessage(String message) {
         LOG.info("收到MQTT消息回调: " + message);
-
         // 检查是否有msgMapping（表示这是新格式的代码消息）
         // 只保留Map逻辑，msgMapping字符串已废弃
-        java.util.Map<String, String> mappingMap = mqttService.getCodeGenerationMsgMappingMap();
+        Map<String, String> mappingMap = mqttService.getCodeGenerationMsgMappingMap();
         if (mappingMap != null && !mappingMap.isEmpty()) {
             LOG.info("检测到msgMapping，这是新格式代码消息: " + mappingMap);
-            // 清除已使用的msgMapping
-            mqttService.clearCodeGenerationMsgMapping();
-            // 后续可以根据msgMapping做特殊处理
+            // 不再清空msgMapping
         }
 
         // 如果是超时消息，重置状态
@@ -1102,38 +1109,25 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         private Editor editor;
         private boolean generated; // 添加生成状态标记
         private final String uuid = java.util.UUID.randomUUID().toString();
+        private final Map<String, String> msgMapping;
 
-        public ChatMessage(String content, boolean isUser) {
+        public ChatMessage(String content, boolean isUser, Map<String, String> msgMapping) {
             this.content = content;
             this.isUser = isUser;
             this.generated = false;
+            this.msgMapping = msgMapping != null ? new HashMap<>(msgMapping) : null;
         }
-
-        public String getContent() {
-            return content;
+        public ChatMessage(String content, boolean isUser) {
+            this(content, isUser, null);
         }
-
-        public boolean isUser() {
-            return isUser;
-        }
-
-        public void setEditor(Editor editor) {
-            this.editor = editor;
-        }
-
-        public Editor getEditor() {
-            return editor;
-        }
-
-        public boolean isGenerated() {
-            return generated;
-        }
-
-        public void setGenerated(boolean generated) {
-            this.generated = generated;
-        }
-
+        public String getContent() { return content; }
+        public boolean isUser() { return isUser; }
+        public void setEditor(Editor editor) { this.editor = editor; }
+        public Editor getEditor() { return editor; }
+        public boolean isGenerated() { return generated; }
+        public void setGenerated(boolean generated) { this.generated = generated; }
         public String getUuid() { return uuid; }
+        public Map<String, String> getMsgMapping() { return msgMapping; }
     }
 
     /**

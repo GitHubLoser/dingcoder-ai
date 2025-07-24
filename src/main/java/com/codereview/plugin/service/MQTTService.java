@@ -196,13 +196,18 @@ public final class MQTTService {
                 cn.hutool.json.JSONObject textObj = cn.hutool.json.JSONUtil.parseObj(text);
                 String code = textObj.getStr("code");
                 String msgMapping = textObj.getStr("msgMapping");
+                LOG.info("[多语言] 原始msgMapping内容: " + msgMapping);
                 if (msgMapping != null) {
                     try {
-                        cn.hutool.json.JSONObject mappingObj = cn.hutool.json.JSONUtil.parseObj(msgMapping);
+                        String mappingJson = org.apache.commons.text.StringEscapeUtils.unescapeJava(msgMapping);
+                        LOG.info("[多语言] unescape后msgMapping内容: " + mappingJson);
+                        cn.hutool.json.JSONObject mappingObj = cn.hutool.json.JSONUtil.parseObj(mappingJson);
                         lastCodeGenerationMsgMappingMap = new java.util.HashMap<>();
                         for (String key : mappingObj.keySet()) {
                             lastCodeGenerationMsgMappingMap.put(key, mappingObj.getStr(key));
+                            LOG.info("[多语言] 解析msgMapping: key=" + key + ", value=" + mappingObj.getStr(key));
                         }
+                        LOG.info("[多语言] 解析后msgMapping Map: " + lastCodeGenerationMsgMappingMap);
                     } catch (Exception ex) {
                         LOG.warn("msgMapping不是标准JSON，无法转为Map", ex);
                         lastCodeGenerationMsgMappingMap = null;
