@@ -49,7 +49,7 @@ public final class MQTTService {
     private final Object messageLock = new Object();
     
     // 代码生成模块的msgMapping存储
-    private String lastCodeGenerationMsgMapping = null;
+    private Map<String, String> lastCodeGenerationMsgMappingMap = null;
 
     /**
      * 获取MQTT服务实例
@@ -189,38 +189,48 @@ public final class MQTTService {
      * @param jsonContent JSON格式的消息内容
      * @return 解析出的text内容，如果解析失败返回null
      */
-    private String parseMessageContent(String jsonContent) {
+    public String parseMessageContent(String jsonContent) {
         try {
             LOG.info("开始解析JSON消息: " + jsonContent);
-            // 先用Hutool解析外层
+            // 直接用Hutool解析标准JSON
             cn.hutool.json.JSONObject root = cn.hutool.json.JSONUtil.parseObj(jsonContent);
             cn.hutool.json.JSONObject msgData = root.getJSONObject("msgData");
             if (msgData != null) {
                 String text = msgData.getStr("text");
                 LOG.info("解析出text内容: " + text);
-
-                // 手动提取code和msgMapping，兼容物理换行
-                int codeStart = text.indexOf("\"code\":\"");
-                int msgMappingStart = text.indexOf("\",\"msgMapping\":\"");
-                if (codeStart != -1 && msgMappingStart != -1) {
-                    codeStart += 8;
-                    String code = text.substring(codeStart, msgMappingStart);
-                    int msgMappingEnd = text.lastIndexOf("\"}");
-                    String msgMapping = null;
-                    if (msgMappingEnd > msgMappingStart) {
-                        msgMappingStart += 17;
-                        msgMapping = text.substring(msgMappingStart, msgMappingEnd);
-                        lastCodeGenerationMsgMapping = msgMapping;
+                // 新格式：text本身是一个JSON字符串，包含code和msgMapping
+                try {
+                    cn.hutool.json.JSONObject textObj = cn.hutool.json.JSONUtil.parseObj(text);
+                    String code = textObj.getStr("code");
+                    String msgMapping = textObj.getStr("msgMapping");
+                    if (msgMapping != null) {
+                        // 解析为map
+                        try {
+                            cn.hutool.json.JSONObject mappingObj = cn.hutool.json.JSONUtil.parseObj(msgMapping);
+                            lastCodeGenerationMsgMappingMap = new HashMap<>();
+                            for (String key : mappingObj.keySet()) {
+                                lastCodeGenerationMsgMappingMap.put(key, mappingObj.getStr(key));
+                            }
+                        } catch (Exception ex) {
+                            LOG.warn("msgMapping不是标准JSON，无法转为Map", ex);
+                            lastCodeGenerationMsgMappingMap = null;
+                        }
+                    } else {
+                        lastCodeGenerationMsgMappingMap = null;
                     }
-                    return code;
+                    return code != null ? code : text;
+                } catch (Exception e) {
+                    LOG.warn("text字段不是标准JSON，直接返回原文", e);
+                    lastCodeGenerationMsgMappingMap = null;
+                    return text;
                 }
-                // 如果不是新格式，直接返回text
-                return text;
             }
             LOG.warn("未找到有效内容字段，原始消息: " + jsonContent);
+            lastCodeGenerationMsgMappingMap = null;
             return null;
         } catch (Exception e) {
             LOG.error("解析JSON消息失败: " + jsonContent, e);
+            lastCodeGenerationMsgMappingMap = null;
             return null;
         }
     }
@@ -290,7 +300,7 @@ public final class MQTTService {
                 // 清空缓存消息
                 pendingMessages.clear();
                 // 清空代码生成msgMapping
-                lastCodeGenerationMsgMapping = null;
+                lastCodeGenerationMsgMappingMap = null;
                 LOG.info("已清空缓存消息队列和msgMapping");
             }
         } catch (Exception e) {
@@ -331,7 +341,7 @@ public final class MQTTService {
                 currentUserSid = null;
                 topicCallbacks.clear();
                 pendingMessages.clear();
-                lastCodeGenerationMsgMapping = null;
+                lastCodeGenerationMsgMappingMap = null;
                 
                 LOG.info("MQTT服务资源清理完成");
             }
@@ -440,18 +450,18 @@ public final class MQTTService {
     }
 
     /**
-     * 获取代码生成的最后一次msgMapping
-     * @return msgMapping字符串，如果没有则返回null
+     * 获取代码生成的最后一次msgMapping（Map结构）
+     * @return msgMapping的Map，如果没有则返回null
      */
-    public String getCodeGenerationMsgMapping() {
-        return lastCodeGenerationMsgMapping;
+    public Map<String, String> getCodeGenerationMsgMappingMap() {
+        return lastCodeGenerationMsgMappingMap;
     }
 
     /**
      * 清除代码生成的msgMapping
      */
     public void clearCodeGenerationMsgMapping() {
-        this.lastCodeGenerationMsgMapping = null;
+        this.lastCodeGenerationMsgMappingMap = null;
     }
 
 

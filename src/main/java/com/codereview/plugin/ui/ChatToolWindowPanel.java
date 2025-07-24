@@ -616,13 +616,12 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
 
                     // 写入msgMapping到多语言文件
                     try {
-                        String msgMapping = com.codereview.plugin.service.MQTTService.getInstance().getCodeGenerationMsgMapping();
-                        LOG.info("[多语言] 当前msgMapping内容: " + msgMapping);
-                        if (msgMapping != null && !msgMapping.trim().isEmpty()) {
-                            // 解析msgMapping为key-value
-                            cn.hutool.json.JSONObject mappingObj = cn.hutool.json.JSONUtil.parseObj(msgMapping);
-                            for (String key : mappingObj.keySet()) {
-                                String value = mappingObj.getStr(key);
+                        java.util.Map<String, String> mappingMap = com.codereview.plugin.service.MQTTService.getInstance().getCodeGenerationMsgMappingMap();
+                        LOG.info("[多语言] 当前msgMapping Map内容: " + mappingMap);
+                        if (mappingMap != null && !mappingMap.isEmpty()) {
+                            for (java.util.Map.Entry<String, String> entry : mappingMap.entrySet()) {
+                                String key = entry.getKey();
+                                String value = entry.getValue();
                                 LOG.info("[多语言] 写入 key=" + key + ", value=" + value);
                                 com.codereview.plugin.GenerateMessageMappingService.writeUnicodeProperties(key, value);
                             }
@@ -933,10 +932,10 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         LOG.info("收到MQTT消息回调: " + message);
 
         // 检查是否有msgMapping（表示这是新格式的代码消息）
-        MQTTService mqttService = MQTTService.getInstance();
-        String msgMapping = mqttService.getCodeGenerationMsgMapping();
-        if (msgMapping != null) {
-            LOG.info("检测到msgMapping，这是新格式代码消息: " + msgMapping);
+        // 只保留Map逻辑，msgMapping字符串已废弃
+        java.util.Map<String, String> mappingMap = mqttService.getCodeGenerationMsgMappingMap();
+        if (mappingMap != null && !mappingMap.isEmpty()) {
+            LOG.info("检测到msgMapping，这是新格式代码消息: " + mappingMap);
             // 清除已使用的msgMapping
             mqttService.clearCodeGenerationMsgMapping();
             // 后续可以根据msgMapping做特殊处理
