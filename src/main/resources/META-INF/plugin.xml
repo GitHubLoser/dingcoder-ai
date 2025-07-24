@@ -44,7 +44,6 @@
                     factoryClass="com.codereview.plugin.ui.ChatToolWindowFactory"/>
 
         <!-- 应用级别服务 -->
-        <applicationService serviceImplementation="com.codereview.plugin.service.AIService"/>
         <applicationService serviceImplementation="com.codereview.plugin.auth.AuthService"/>
         <applicationService serviceImplementation="com.codereview.plugin.service.MQTTService"/>
         
