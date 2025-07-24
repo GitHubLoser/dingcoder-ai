@@ -1,9 +1,12 @@
 package com.codereview.plugin.model;
 
+import java.util.UUID;
+
 public class ChatMessage {
     private final String content;
     private final boolean isUser;
     private final long timestamp;
+    private final String uuid = UUID.randomUUID().toString();
 
     public ChatMessage(String content, boolean isUser) {
         this.content = content;
@@ -22,4 +25,6 @@ public class ChatMessage {
     public long getTimestamp() {
         return timestamp;
     }
+
+    public String getUuid() { return uuid; }
 } 

@@ -631,6 +631,17 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                     } catch (Exception ex) {
                         LOG.error("[多语言] 写入多语言文件失败", ex);
                     }
+                    // 发送统计接口 type=0
+                    LOG.info("[统计] 即将上报 codeId=" + (message instanceof ChatMessage ? ((ChatMessage)message).getUuid() : "null") + ", userName=" + com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser() + ", className=" + className + ", type=0");
+                    com.codereview.plugin.service.CodeGenerationStatisticsService.getInstance().sendStatistics(
+                        message instanceof ChatMessage ? ((ChatMessage)message).getUuid() : java.util.UUID.randomUUID().toString(),
+                        com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser(),
+                        className,
+                        "0",
+                        null,
+                        null
+                    );
+                    LOG.info("[统计] sendStatistics已调用完成（type=0）");
                 }
             });
             
@@ -651,6 +662,17 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                     
                     // 记录用户反馈统计
                     recordUserFeedbackEvent(content, "LIKE", feedback);
+                    // 发送统计接口 type=1
+                    LOG.info("[统计] 即将上报 codeId=" + (message instanceof ChatMessage ? ((ChatMessage)message).getUuid() : "null") + ", userName=" + com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser() + ", className=" + className + ", type=1, feedbackType=LIKE, feedbackContent=" + feedback);
+                    com.codereview.plugin.service.CodeGenerationStatisticsService.getInstance().sendStatistics(
+                        message instanceof ChatMessage ? ((ChatMessage)message).getUuid() : java.util.UUID.randomUUID().toString(),
+                        com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser(),
+                        className,
+                        "1",
+                        "LIKE",
+                        feedback
+                    );
+                    LOG.info("[统计] sendStatistics已调用完成（type=1, LIKE）");
                 }
             });
             
@@ -671,6 +693,17 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                     
                     // 记录用户反馈统计
                     recordUserFeedbackEvent(content, "DISLIKE", feedback);
+                    // 发送统计接口 type=1
+                    LOG.info("[统计] 即将上报 codeId=" + (message instanceof ChatMessage ? ((ChatMessage)message).getUuid() : "null") + ", userName=" + com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser() + ", className=" + className + ", type=1, feedbackType=DISLIKE, feedbackContent=" + feedback);
+                    com.codereview.plugin.service.CodeGenerationStatisticsService.getInstance().sendStatistics(
+                        message instanceof ChatMessage ? ((ChatMessage)message).getUuid() : java.util.UUID.randomUUID().toString(),
+                        com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser(),
+                        className,
+                        "1",
+                        "DISLIKE",
+                        feedback
+                    );
+                    LOG.info("[统计] sendStatistics已调用完成（type=1, DISLIKE）");
                 }
             });
 
@@ -1068,6 +1101,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         private final boolean isUser;
         private Editor editor;
         private boolean generated; // 添加生成状态标记
+        private final String uuid = java.util.UUID.randomUUID().toString();
 
         public ChatMessage(String content, boolean isUser) {
             this.content = content;
@@ -1098,6 +1132,8 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         public void setGenerated(boolean generated) {
             this.generated = generated;
         }
+
+        public String getUuid() { return uuid; }
     }
 
     /**
