@@ -420,7 +420,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                     int msgIdx = rand.nextInt(msgCount) + 1;
                     String prefix = props.getProperty("waiting.prefix." + prefixIdx);
                     String msg = props.getProperty("waiting.msg." + msgIdx);
-                    waitingMsg = prefix + "\n" + msg;
+                    waitingMsg = prefix  + msg;
                 }
             }
         } catch (Exception ex) {
@@ -428,7 +428,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         }
         currentWaitingMsg = waitingMsg;
         dotCount = 0;
-        addAssistantMessage(waitingMsg);
+        addAssistantMessage(waitingMsg, true);
         // 动态点点点动画
         if (waitingTimer != null && waitingTimer.isRunning()) waitingTimer.stop();
         waitingTimer = new Timer(500, evt -> {
@@ -439,7 +439,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             if (!chatMessages.isEmpty()) {
                 ChatMessage last = chatMessages.get(chatMessages.size() - 1);
                 if (!last.isUser()) {
-                    chatMessages.set(chatMessages.size() - 1, new ChatMessage(sb.toString(), false));
+                    chatMessages.set(chatMessages.size() - 1, new ChatMessage(sb.toString(), false, last.isWaitingTip()));
                     updateChatDisplay();
                 }
             }
@@ -496,16 +496,21 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         updateChatDisplay();
     }
 
-    private void addAssistantMessage(String message) {
+    private void addAssistantMessage(String message, boolean isWaitingTip) {
         LOG.info("开始添加助手消息");
         // 绑定当前msgMapping副本
         Map<String, String> mappingMap = mqttService.getCodeGenerationMsgMappingMap();
         LOG.info("[多语言][DEBUG] addAssistantMessage mappingMap before new ChatMessage: " + mappingMap + ", ref=" + System.identityHashCode(mappingMap));
-        ChatMessage chatMessage = new ChatMessage(message, false, mappingMap);
+        ChatMessage chatMessage = new ChatMessage(message, false, mappingMap, isWaitingTip);
         LOG.info("[多语言][DEBUG] addAssistantMessage mappingMap in ChatMessage: " + chatMessage.getMsgMapping() + ", ref=" + System.identityHashCode(chatMessage.getMsgMapping()));
         chatMessages.add(chatMessage);
         updateChatDisplay();
         LOG.info("助手消息添加完成");
+    }
+
+    // 保持兼容
+    private void addAssistantMessage(String message) {
+        addAssistantMessage(message, false);
     }
 
     private void updateChatDisplay() {
@@ -714,7 +719,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             likeButton.setContentAreaFilled(false);
             likeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             likeButton.addActionListener(e -> {
-                String feedback = showFeedbackDialog("点赞反馈", "请告诉我们您喜欢这个回答的原因：");
+                String feedback = showFeedbackDialog("点赞反馈", "会说就多说一点：");
                 if (feedback != null) {
                     LOG.info("用户点赞反馈: " + feedback);
                     likeButton.setText("👍");
@@ -1046,6 +1051,14 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         SwingUtilities.invokeLater(() -> {
             try {
                 if (waitingTimer != null && waitingTimer.isRunning()) waitingTimer.stop();
+                // 移除最后一条等待语
+                if (!chatMessages.isEmpty()) {
+                    ChatMessage last = chatMessages.get(chatMessages.size() - 1);
+                    if (!last.isUser() && last.isWaitingTip()) {
+                        chatMessages.remove(chatMessages.size() - 1);
+                        updateChatDisplay();
+                    }
+                }
                 LOG.info("在EDT线程中处理消息...");
                 // 如果是在欢迎面板，切换到聊天面板
                 if (chatScrollPane.getViewport().getView() == welcomePanel) {
@@ -1163,18 +1176,25 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         private boolean generated; // 添加生成状态标记
         private final String uuid = java.util.UUID.randomUUID().toString();
         private final Map<String, String> msgMapping;
-
+        private final boolean isWaitingTip;
         public ChatMessage(String content, boolean isUser, Map<String, String> msgMapping) {
-            this.content = content;
-            this.isUser = isUser;
-            this.generated = false;
-            this.msgMapping = msgMapping != null ? new HashMap<>(msgMapping) : null;
+            this(content, isUser, msgMapping, false);
         }
         public ChatMessage(String content, boolean isUser) {
-            this(content, isUser, null);
+            this(content, isUser, null, false);
+        }
+        public ChatMessage(String content, boolean isUser, boolean isWaitingTip) {
+            this(content, isUser, null, isWaitingTip);
+        }
+        public ChatMessage(String content, boolean isUser, Map<String, String> msgMapping, boolean isWaitingTip) {
+            this.content = content;
+            this.isUser = isUser;
+            this.msgMapping = msgMapping;
+            this.isWaitingTip = isWaitingTip;
         }
         public String getContent() { return content; }
         public boolean isUser() { return isUser; }
+        public boolean isWaitingTip() { return isWaitingTip; }
         public void setEditor(Editor editor) { this.editor = editor; }
         public Editor getEditor() { return editor; }
         public boolean isGenerated() { return generated; }
