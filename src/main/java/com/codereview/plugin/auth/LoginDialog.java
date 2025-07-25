@@ -17,6 +17,11 @@ import java.awt.*;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.prefs.Preferences;
+import java.util.Properties;
+import java.util.Random;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import javax.swing.JOptionPane;
 
 /**
  * 登录对话框
@@ -152,6 +157,23 @@ public class LoginDialog extends DialogWrapper {
                     if (authService.isLoggedIn()) {
                         LOG.info("登录成功，关闭对话框");
                         // 登录成功 - 关闭对话框
+                        // 弹趣味消息
+                        try {
+                            Properties props = new Properties();
+                            InputStream in = getClass().getClassLoader().getResourceAsStream("fun-messages.properties");
+                            if (in != null) {
+                                props.load(new InputStreamReader(in, StandardCharsets.UTF_8));
+                                in.close();
+                                Random rand = new Random();
+                                int idx = rand.nextInt(2) + 1; // 目前有2条
+                                String msg = props.getProperty("login." + idx);
+                                if (msg != null) {
+                                    JOptionPane.showMessageDialog(null, msg, "趣味提示", JOptionPane.INFORMATION_MESSAGE);
+                                }
+                            }
+                        } catch (Exception ex) {
+                            // ignore
+                        }
                         dispose();
                         
                         // 更新主面板状态并显示成功消息

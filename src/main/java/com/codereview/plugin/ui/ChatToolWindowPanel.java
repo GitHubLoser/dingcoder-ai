@@ -27,10 +27,17 @@ import java.util.function.Consumer;
 import java.awt.event.ActionListener;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.Properties;
+import java.util.Random;
+import java.io.InputStream;
+import javax.swing.JOptionPane;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 
 // 添加编辑器相关的import
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.EditorFactory;
+import javax.swing.Timer;
 
 /**
  * 聊天界面
@@ -76,6 +83,10 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     private static final Color SEND_BUTTON_COLOR = new JBColor(new Color(24, 144, 255), new Color(64, 169, 255));
     private static final Color SEND_BUTTON_HOVER_COLOR = new JBColor(new Color(40, 167, 69), new Color(52, 199, 89));
     private static final Color SEND_BUTTON_DISABLED_COLOR = new JBColor(new Color(200, 200, 200), new Color(100, 100, 100));
+
+    private Timer waitingTimer;
+    private String currentWaitingMsg;
+    private int dotCount = 0;
 
     public ChatToolWindowPanel(Project project) {
         super(new BorderLayout());
@@ -391,8 +402,49 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         inputField.setEditable(false);
         
         updateSendButtonForCancel();
-        addAssistantMessage("正在为您生成，请稍候");
-        
+        // 随机趣味等待语（前缀+消息）
+        String waitingMsg = "AI正在努力思考中...";
+        try {
+            Properties props = new Properties();
+            InputStream in = getClass().getClassLoader().getResourceAsStream("fun-messages.properties");
+            if (in != null) {
+                props.load(new InputStreamReader(in, StandardCharsets.UTF_8));
+                in.close();
+                int prefixCount = 0;
+                while (props.containsKey("waiting.prefix." + (prefixCount + 1))) prefixCount++;
+                int msgCount = 0;
+                while (props.containsKey("waiting.msg." + (msgCount + 1))) msgCount++;
+                if (prefixCount > 0 && msgCount > 0) {
+                    Random rand = new Random();
+                    int prefixIdx = rand.nextInt(prefixCount) + 1;
+                    int msgIdx = rand.nextInt(msgCount) + 1;
+                    String prefix = props.getProperty("waiting.prefix." + prefixIdx);
+                    String msg = props.getProperty("waiting.msg." + msgIdx);
+                    waitingMsg = prefix + "\n" + msg;
+                }
+            }
+        } catch (Exception ex) {
+            // ignore
+        }
+        currentWaitingMsg = waitingMsg;
+        dotCount = 0;
+        addAssistantMessage(waitingMsg);
+        // 动态点点点动画
+        if (waitingTimer != null && waitingTimer.isRunning()) waitingTimer.stop();
+        waitingTimer = new Timer(500, evt -> {
+            dotCount = (dotCount + 1) % 4;
+            StringBuilder sb = new StringBuilder(currentWaitingMsg);
+            for (int i = 0; i < dotCount; i++) sb.append(".");
+            // 替换最后一条助手消息内容
+            if (!chatMessages.isEmpty()) {
+                ChatMessage last = chatMessages.get(chatMessages.size() - 1);
+                if (!last.isUser()) {
+                    chatMessages.set(chatMessages.size() - 1, new ChatMessage(sb.toString(), false));
+                    updateChatDisplay();
+                }
+            }
+        });
+        waitingTimer.start();
         // 立即切换到聊天面板
         if (chatScrollPane.getViewport().getView() == welcomePanel) {
             chatScrollPane.setViewportView(chatPanel);
@@ -593,6 +645,23 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             generateButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             generateButton.setOpaque(true);
             generateButton.addActionListener(e -> {
+                // 弹趣味消息
+                try {
+                    Properties props = new Properties();
+                    InputStream in = getClass().getClassLoader().getResourceAsStream("fun-messages.properties");
+                    if (in != null) {
+                        props.load(new InputStreamReader(in, StandardCharsets.UTF_8));
+                        in.close();
+                        Random rand = new Random();
+                        int idx = rand.nextInt(2) + 1; // 目前有2条
+                        String msg = props.getProperty("codegen." + idx);
+                        if (msg != null) {
+                            JOptionPane.showMessageDialog(panel, msg, "趣味提示", JOptionPane.INFORMATION_MESSAGE);
+                        }
+                    }
+                } catch (Exception ex) {
+                    // ignore
+                }
                 CodeGenerationService codeGenService = CodeGenerationService.getInstance(project);
                 if (codeGenService.generateJavaFile(content, true)) {
                     generateButton.setText("✓ 已生成");
@@ -966,6 +1035,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         // 如果是超时消息，重置状态
         if ("操作超时，请重试".equals(message)) {
             SwingUtilities.invokeLater(() -> {
+                if (waitingTimer != null && waitingTimer.isRunning()) waitingTimer.stop();
                 isWaitingForGeneration = false;
                 updateSendButtonForSend();
                 addAssistantMessage(message);
@@ -975,6 +1045,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
 
         SwingUtilities.invokeLater(() -> {
             try {
+                if (waitingTimer != null && waitingTimer.isRunning()) waitingTimer.stop();
                 LOG.info("在EDT线程中处理消息...");
                 // 如果是在欢迎面板，切换到聊天面板
                 if (chatScrollPane.getViewport().getView() == welcomePanel) {
