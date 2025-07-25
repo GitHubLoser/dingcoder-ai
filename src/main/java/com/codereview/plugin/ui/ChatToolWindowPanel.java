@@ -501,7 +501,28 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         // 绑定当前msgMapping副本
         Map<String, String> mappingMap = mqttService.getCodeGenerationMsgMappingMap();
         LOG.info("[多语言][DEBUG] addAssistantMessage mappingMap before new ChatMessage: " + mappingMap + ", ref=" + System.identityHashCode(mappingMap));
-        ChatMessage chatMessage = new ChatMessage(message, false, mappingMap, isWaitingTip);
+        String displayMessage = message;
+        if ("所有代码均已生成".equals(message.trim())) {
+            // 随机趣味提示
+            try {
+                Properties props = new Properties();
+                InputStream in = getClass().getClassLoader().getResourceAsStream("fun-messages.properties");
+                if (in != null) {
+                    props.load(new InputStreamReader(in, StandardCharsets.UTF_8));
+                    in.close();
+                    int count = 0;
+                    while (props.containsKey("all.generated." + (count + 1))) count++;
+                    if (count > 0) {
+                        Random rand = new Random();
+                        int idx = rand.nextInt(count) + 1;
+                        displayMessage = props.getProperty("all.generated." + idx);
+                    }
+                }
+            } catch (Exception ex) {
+                // ignore
+            }
+        }
+        ChatMessage chatMessage = new ChatMessage(displayMessage, false, mappingMap, isWaitingTip);
         LOG.info("[多语言][DEBUG] addAssistantMessage mappingMap in ChatMessage: " + chatMessage.getMsgMapping() + ", ref=" + System.identityHashCode(chatMessage.getMsgMapping()));
         chatMessages.add(chatMessage);
         updateChatDisplay();
@@ -1068,7 +1089,28 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
 
                 // 添加助手消息
                 LOG.info("开始添加助手消息");
-                addAssistantMessage(message);
+                String displayMessage = message;
+                if ("所有代码均已生成".equals(message.trim())) {
+                    // 随机趣味提示
+                    try {
+                        Properties props = new Properties();
+                        InputStream in = getClass().getClassLoader().getResourceAsStream("fun-messages.properties");
+                        if (in != null) {
+                            props.load(new InputStreamReader(in, StandardCharsets.UTF_8));
+                            in.close();
+                            int count = 0;
+                            while (props.containsKey("all.generated." + (count + 1))) count++;
+                            if (count > 0) {
+                                Random rand = new Random();
+                                int idx = rand.nextInt(count) + 1;
+                                displayMessage = props.getProperty("all.generated." + idx);
+                            }
+                        }
+                    } catch (Exception ex) {
+                        // ignore
+                    }
+                }
+                addAssistantMessage(displayMessage, false);
                 LOG.info("助手消息添加完成");
 
                 // 检查是否是"所有代码均已生成"消息
