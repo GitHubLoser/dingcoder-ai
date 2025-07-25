@@ -1,6 +1,7 @@
 package com.codereview.plugin.service;
 
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.project.Project;
 
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -16,14 +17,13 @@ public class GenerateMessageMappingService {
     private static final Logger LOG = Logger.getInstance(GenerateMessageMappingService.class);
 
 
-    private static String findPropertiesFilePath() {
-        String userPath = System.getProperty("user.dir");
+    public static String findPropertiesFilePath(Project project) {
+        String userPath = project.getBasePath();
+//        LOG.info("当前项目根目录：" + userPath);
         java.io.File userDir = new java.io.File(userPath);
         String relativePath = "develop/lang/message-application_zh_CN.properties";
         java.util.List<String> triedPaths = new java.util.ArrayList<>();
-
         for (java.io.File sub : userDir.listFiles()) {
-            LOG.info("当前目录："+ sub.getAbsolutePath());
             if (sub.isDirectory()) {
                 java.io.File candidate = new java.io.File(sub, relativePath);
                 triedPaths.add(candidate.getAbsolutePath());
@@ -32,11 +32,9 @@ public class GenerateMessageMappingService {
                 }
             }
         }
-        LOG.info("[DEBUG] Tried paths for message-application_zh_CN.properties:");
-        for (String p : triedPaths) {
-            LOG.info("实际message-application_zh_CN.properties的查找路径：" + p);
-        }
-
+//        for (String p : triedPaths) {
+//            LOG.info("实际message-application_zh_CN.properties的查找路径：" + p);
+//        }
         throw new RuntimeException("未找到 message-application_zh_CN.properties 文件");
     }
 
@@ -46,12 +44,13 @@ public class GenerateMessageMappingService {
      * @param chineseValue
      * @throws IOException
      */
-    public static void writeUnicodeProperties(String key, String chineseValue) throws IOException {
-        boolean exist = keyIsExist(key);
+    public static void writeUnicodeProperties(Project project, String key, String chineseValue) throws IOException {
+        boolean exist = keyIsExist(project, key);
+        LOG.info("从多语言文件中读取key是否存在:"+exist);
         if (exist) {
             return;
         }
-        String path = findPropertiesFilePath();
+        String path = findPropertiesFilePath(project);
         NoTimestampProperties prop = new NoTimestampProperties();
         try (OutputStream output = new FileOutputStream(path,true)) {
             prop.setProperty(key, convertToUnicode(chineseValue));
@@ -84,8 +83,8 @@ public class GenerateMessageMappingService {
      * @return
      * @throws IOException
      */
-    public static boolean keyIsExist(String key) throws IOException {
-        String path = findPropertiesFilePath();
+    public static boolean keyIsExist(Project project, String key) throws IOException {
+        String path = findPropertiesFilePath(project);
         Properties props = new Properties();
         FileInputStream fis = new FileInputStream(path);
         // 加载属性文件

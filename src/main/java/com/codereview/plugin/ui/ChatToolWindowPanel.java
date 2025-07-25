@@ -611,8 +611,9 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                             for (Map.Entry<String, String> entry : mappingMap.entrySet()) {
                                 String key = entry.getKey();
                                 String value = entry.getValue();
-                                LOG.info("[多语言] 写入 key=" + key + ", value=" + value);
-                                GenerateMessageMappingService.writeUnicodeProperties(key, value);
+                                LOG.info("[多语言] 写入前 key=" + key + ", value=" + value);
+                                com.codereview.plugin.service.GenerateMessageMappingService.writeUnicodeProperties(project, key, value);
+                                LOG.info("[多语言] 写入完成");
                             }
                             // 写入完成后再清空msgMapping
                             com.codereview.plugin.service.MQTTService.getInstance().clearCodeGenerationMsgMapping();
