@@ -55,7 +55,7 @@ public class GenerateMessageMappingService {
         try (OutputStream output = new FileOutputStream(path, true);
              java.io.OutputStreamWriter writer = new java.io.OutputStreamWriter(output, java.nio.charset.StandardCharsets.UTF_8)) {
             prop.setProperty(key, chineseValue);
-            prop.store(writer, ""); // 去掉注释（时间戳）
+            prop.store(writer, null); // 去掉注释（时间戳）
         }
     }
 
