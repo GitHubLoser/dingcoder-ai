@@ -141,7 +141,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         svgLabel.setPreferredSize(new Dimension(80, 80));
         try {
             // IntelliJ平台推荐用IconLoader加载SVG
-            javax.swing.Icon icon = com.intellij.openapi.util.IconLoader.getIcon("/icons/digiwin-ai-circle.svg", getClass());
+            javax.swing.Icon icon = com.intellij.openapi.util.IconLoader.getIcon("/icons/digiwin-ai-circle-login.svg", getClass());
             svgLabel.setIcon(icon);
         } catch (Exception ex) {
             svgLabel.setText("D");

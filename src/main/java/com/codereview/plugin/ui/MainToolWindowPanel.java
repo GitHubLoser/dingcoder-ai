@@ -137,7 +137,7 @@ public class MainToolWindowPanel extends JBPanel<MainToolWindowPanel> {
         iconLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
         iconLabel.setPreferredSize(new Dimension(80, 80));
         try {
-            javax.swing.Icon icon = com.intellij.openapi.util.IconLoader.getIcon("/icons/digiwin-ai-circle.svg", getClass());
+            javax.swing.Icon icon = com.intellij.openapi.util.IconLoader.getIcon("/icons/digiwin-ai-circle-login.svg", getClass());
             iconLabel.setIcon(icon);
         } catch (Exception ex) {
             iconLabel.setText("D");
