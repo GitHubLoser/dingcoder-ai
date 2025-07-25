@@ -1,5 +1,7 @@
 package com.codereview.plugin.service;
 
+import com.intellij.openapi.diagnostic.Logger;
+
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -11,18 +13,30 @@ import java.util.Properties;
  */
 public class GenerateMessageMappingService {
 
+    private static final Logger LOG = Logger.getInstance(GenerateMessageMappingService.class);
+
+
     private static String findPropertiesFilePath() {
         String userPath = System.getProperty("user.dir");
         java.io.File userDir = new java.io.File(userPath);
         String relativePath = "develop/lang/message-application_zh_CN.properties";
+        java.util.List<String> triedPaths = new java.util.ArrayList<>();
+
         for (java.io.File sub : userDir.listFiles()) {
+            LOG.info("当前目录："+ sub.getAbsolutePath());
             if (sub.isDirectory()) {
                 java.io.File candidate = new java.io.File(sub, relativePath);
+                triedPaths.add(candidate.getAbsolutePath());
                 if (candidate.exists()) {
                     return candidate.getAbsolutePath();
                 }
             }
         }
+        LOG.info("[DEBUG] Tried paths for message-application_zh_CN.properties:");
+        for (String p : triedPaths) {
+            LOG.info("实际message-application_zh_CN.properties的查找路径：" + p);
+        }
+
         throw new RuntimeException("未找到 message-application_zh_CN.properties 文件");
     }
 
