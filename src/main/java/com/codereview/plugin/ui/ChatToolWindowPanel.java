@@ -38,6 +38,7 @@ import java.nio.charset.StandardCharsets;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.EditorFactory;
 import javax.swing.Timer;
+import javax.swing.border.Border;
 
 /**
  * 聊天界面
@@ -741,23 +742,26 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             likeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             likeButton.setEnabled(!message.isLiked());
             likeButton.addActionListener(e -> {
-                String feedback = showFeedbackDialog("点赞反馈", "会说就多说一点：");
-                if (feedback != null) {
-                    LOG.info("用户点赞反馈: " + feedback);
-                    // 只保留统计逻辑，不禁用按钮、不变色
-                    recordUserFeedbackEvent(content, "LIKE", feedback);
-                    com.codereview.plugin.service.CodeGenerationStatisticsService.getInstance().sendStatistics(
-                        message.getUuid(),
-                        com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser(),
-                        className,
-                        "1",
-                        "LIKE",
-                        feedback
-                    );
-                    message.setLiked(true);
-                    message.setDisliked(false);
-                    updateChatDisplay();
+                String feedback;
+                while (true) {
+                    feedback = showFeedbackDialog("点赞反馈", "会说就多说一点：");
+                    if (feedback == null) return; // 用户取消
+                    if (!feedback.trim().isEmpty()) break;
+                    JOptionPane.showMessageDialog(this, "反馈内容不能为空！", "提示", JOptionPane.WARNING_MESSAGE);
                 }
+                LOG.info("用户点赞反馈: " + feedback);
+                recordUserFeedbackEvent(content, "LIKE", feedback);
+                com.codereview.plugin.service.CodeGenerationStatisticsService.getInstance().sendStatistics(
+                    message.getUuid(),
+                    com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser(),
+                    className,
+                    "1",
+                    "LIKE",
+                    feedback
+                );
+                message.setLiked(true);
+                message.setDisliked(false);
+                updateChatDisplay();
             });
             
             // 点踩按钮
@@ -769,23 +773,26 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             dislikeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             dislikeButton.setEnabled(!message.isDisliked());
             dislikeButton.addActionListener(e -> {
-                String feedback = showFeedbackDialog("改进建议", "请告诉我们您认为需要改进的地方：");
-                if (feedback != null) {
-                    LOG.info("用户点踩反馈: " + feedback);
-                    // 只保留统计逻辑，不禁用按钮、不变色
-                    recordUserFeedbackEvent(content, "DISLIKE", feedback);
-                    com.codereview.plugin.service.CodeGenerationStatisticsService.getInstance().sendStatistics(
-                        message.getUuid(),
-                        com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser(),
-                        className,
-                        "1",
-                        "DISLIKE",
-                        feedback
-                    );
-                    message.setDisliked(true);
-                    message.setLiked(false);
-                    updateChatDisplay();
+                String feedback;
+                while (true) {
+                    feedback = showFeedbackDialog("改进建议", "请告诉我们您认为需要改进的地方：");
+                    if (feedback == null) return;
+                    if (!feedback.trim().isEmpty()) break;
+                    JOptionPane.showMessageDialog(this, "反馈内容不能为空！", "提示", JOptionPane.WARNING_MESSAGE);
                 }
+                LOG.info("用户点踩反馈: " + feedback);
+                recordUserFeedbackEvent(content, "DISLIKE", feedback);
+                com.codereview.plugin.service.CodeGenerationStatisticsService.getInstance().sendStatistics(
+                    message.getUuid(),
+                    com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser(),
+                    className,
+                    "1",
+                    "DISLIKE",
+                    feedback
+                );
+                message.setDisliked(true);
+                message.setLiked(false);
+                updateChatDisplay();
             });
 
             rightPanel.add(generateButton);
@@ -1484,49 +1491,40 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     private String showFeedbackDialog(String title, String message) {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(JBUI.Borders.empty(10));
-        
-        // 提示信息
         JLabel messageLabel = new JLabel(message);
         messageLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
         panel.add(messageLabel, BorderLayout.NORTH);
-        
-        // 输入区域
         JTextArea feedbackArea = new JTextArea(4, 30);
         feedbackArea.setLineWrap(true);
         feedbackArea.setWrapStyleWord(true);
         feedbackArea.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 13));
         feedbackArea.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
-        
         JScrollPane scrollPane = new JScrollPane(feedbackArea);
-        scrollPane.setBorder(BorderFactory.createLineBorder(new JBColor(new Color(200, 200, 200), new Color(100, 100, 100)), 1));
+        Border defaultBorder = BorderFactory.createLineBorder(new JBColor(new Color(200, 200, 200), new Color(100, 100, 100)), 1);
+        scrollPane.setBorder(defaultBorder);
         scrollPane.setPreferredSize(new Dimension(350, 100));
-        
-        // 添加间距
         panel.add(Box.createVerticalStrut(10), BorderLayout.CENTER);
         panel.add(scrollPane, BorderLayout.SOUTH);
-        
-        int result = JOptionPane.showConfirmDialog(
-            this,
-            panel,
-            title,
-            JOptionPane.OK_CANCEL_OPTION,
-            JOptionPane.PLAIN_MESSAGE
-        );
-        
-        if (result == JOptionPane.OK_OPTION) {
+        while (true) {
+            int result = JOptionPane.showConfirmDialog(
+                this,
+                panel,
+                title,
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE
+            );
+            if (result != JOptionPane.OK_OPTION) {
+                return null;
+            }
             String feedback = feedbackArea.getText().trim();
             if (!feedback.isEmpty()) {
-                JOptionPane.showMessageDialog(
-                    this, 
-                    "感谢您的反馈！我们会认真考虑您的建议。", 
-                    "反馈已提交", 
-                    JOptionPane.INFORMATION_MESSAGE
-                );
+                scrollPane.setBorder(defaultBorder);
                 return feedback;
+            } else {
+                scrollPane.setBorder(BorderFactory.createLineBorder(Color.RED, 2));
+                feedbackArea.requestFocus();
             }
         }
-        
-        return null;
     }
 
     /**
