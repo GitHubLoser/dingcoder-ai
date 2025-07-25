@@ -74,7 +74,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     private static final Color HEADER_COLOR = new JBColor(new Color(248, 249, 250), new Color(50, 50, 50));
     private static final Color INPUT_AREA_COLOR = new JBColor(new Color(248, 249, 250), new Color(50, 50, 50));
     private static final Color ASSISTANT_BUBBLE_COLOR = new JBColor(new Color(240, 242, 247), new Color(60, 60, 60));
-    private static final Color USER_BUBBLE_COLOR = new JBColor(new Color(16, 142, 233), new Color(52, 139, 255));
+    private static final Color USER_BUBBLE_COLOR = new JBColor(new Color(220, 248, 198), new Color(60, 80, 60)); // 更明显的绿色背景
 
     // 新增通义灵码风格的输入框颜色
     private static final Color INPUT_BORDER_COLOR = new JBColor(new Color(225, 225, 225), new Color(70, 70, 70));
@@ -562,7 +562,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             outerPanel.add(Box.createHorizontalGlue());
             JPanel bubble = new JPanel();
             bubble.setOpaque(true);
-            bubble.setBackground(new JBColor(new Color(243, 244, 246), new Color(50, 54, 60)));
+            bubble.setBackground(USER_BUBBLE_COLOR);
             bubble.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
             bubble.setLayout(new BoxLayout(bubble, BoxLayout.X_AXIS));
             JLabel label = new JLabel("<html>" + content.replace("\n", "<br>") + "</html>");
