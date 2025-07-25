@@ -52,9 +52,10 @@ public class GenerateMessageMappingService {
         }
         String path = findPropertiesFilePath(project);
         NoTimestampProperties prop = new NoTimestampProperties();
-        try (OutputStream output = new FileOutputStream(path,true)) {
-            prop.setProperty(key, chineseValue); // 直接写入中文
-            prop.store(output, null);
+        try (OutputStream output = new FileOutputStream(path, true);
+             java.io.OutputStreamWriter writer = new java.io.OutputStreamWriter(output, java.nio.charset.StandardCharsets.UTF_8)) {
+            prop.setProperty(key, chineseValue);
+            prop.store(writer, ""); // 去掉注释（时间戳）
         }
     }
 
