@@ -53,7 +53,7 @@ public class GenerateMessageMappingService {
         String path = findPropertiesFilePath(project);
         NoTimestampProperties prop = new NoTimestampProperties();
         try (OutputStream output = new FileOutputStream(path,true)) {
-            prop.setProperty(key, convertToUnicode(chineseValue));
+            prop.setProperty(key, chineseValue); // 直接写入中文
             prop.store(output, null);
         }
     }
