@@ -733,24 +733,19 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             });
             
             // 点赞按钮
-            JButton likeButton = new JButton("👍");
+            JButton likeButton = new JButton(message.isLiked() ? "已点赞" : "👍");
             likeButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 11));  // 字体稍小
             likeButton.setBorder(BorderFactory.createEmptyBorder(3, 2, 3, 2));  // 进一步减少内边距
             likeButton.setFocusPainted(false);
             likeButton.setContentAreaFilled(false);
             likeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            likeButton.setEnabled(!message.isLiked());
             likeButton.addActionListener(e -> {
                 String feedback = showFeedbackDialog("点赞反馈", "会说就多说一点：");
                 if (feedback != null) {
                     LOG.info("用户点赞反馈: " + feedback);
-                    likeButton.setText("👍");
-                    likeButton.setEnabled(false);
-                    likeButton.setForeground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
-                    
-                    // 记录用户反馈统计
+                    // 只保留统计逻辑，不禁用按钮、不变色
                     recordUserFeedbackEvent(content, "LIKE", feedback);
-                    // 发送统计接口 type=1
-                    LOG.info("[统计] 即将上报 codeId=" + (message.getUuid()) + ", userName=" + com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser() + ", className=" + className + ", type=1, feedbackType=LIKE, feedbackContent=" + feedback);
                     com.codereview.plugin.service.CodeGenerationStatisticsService.getInstance().sendStatistics(
                         message.getUuid(),
                         com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser(),
@@ -759,29 +754,26 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                         "LIKE",
                         feedback
                     );
-                    LOG.info("[统计] sendStatistics已调用完成（type=1, LIKE）");
+                    message.setLiked(true);
+                    message.setDisliked(false);
+                    updateChatDisplay();
                 }
             });
             
             // 点踩按钮
-            JButton dislikeButton = new JButton("👎");
+            JButton dislikeButton = new JButton(message.isDisliked() ? "已点踩" : "👎");
             dislikeButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 11));  // 字体稍小
             dislikeButton.setBorder(BorderFactory.createEmptyBorder(3, 2, 3, 2));  // 进一步减少内边距
             dislikeButton.setFocusPainted(false);
             dislikeButton.setContentAreaFilled(false);
             dislikeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            dislikeButton.setEnabled(!message.isDisliked());
             dislikeButton.addActionListener(e -> {
                 String feedback = showFeedbackDialog("改进建议", "请告诉我们您认为需要改进的地方：");
                 if (feedback != null) {
                     LOG.info("用户点踩反馈: " + feedback);
-                    dislikeButton.setText("👎");
-                    dislikeButton.setEnabled(false);
-                    dislikeButton.setForeground(new JBColor(new Color(0xDC3545), new Color(0xDC3545)));
-                    
-                    // 记录用户反馈统计
+                    // 只保留统计逻辑，不禁用按钮、不变色
                     recordUserFeedbackEvent(content, "DISLIKE", feedback);
-                    // 发送统计接口 type=1
-                    LOG.info("[统计] 即将上报 codeId=" + (message.getUuid()) + ", userName=" + com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser() + ", className=" + className + ", type=1, feedbackType=DISLIKE, feedbackContent=" + feedback);
                     com.codereview.plugin.service.CodeGenerationStatisticsService.getInstance().sendStatistics(
                         message.getUuid(),
                         com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser(),
@@ -790,7 +782,9 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                         "DISLIKE",
                         feedback
                     );
-                    LOG.info("[统计] sendStatistics已调用完成（type=1, DISLIKE）");
+                    message.setDisliked(true);
+                    message.setLiked(false);
+                    updateChatDisplay();
                 }
             });
 
@@ -1033,8 +1027,92 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         Dimension buttonSize = new Dimension(150, 32);
         batchGenerateButton.setPreferredSize(buttonSize);
 
+        // 创建批量点赞按钮
+        JButton batchLikeButton = new JButton("批量点赞");
+        batchLikeButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
+        batchLikeButton.setForeground(JBColor.foreground());
+        batchLikeButton.setBackground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
+        batchLikeButton.setBorder(BorderFactory.createEmptyBorder(6, 12, 6, 12));
+        batchLikeButton.setFocusPainted(false);
+        batchLikeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        batchLikeButton.setOpaque(true);
+        batchLikeButton.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                batchLikeButton.setBackground(new JBColor(new Color(0x218838), new Color(0x218838)));
+            }
+            @Override
+            public void mouseExited(MouseEvent e) {
+                batchLikeButton.setBackground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
+            }
+        });
+        batchLikeButton.addActionListener(e -> {
+            String feedback = showFeedbackDialog("批量点赞反馈", "请填写本次批量点赞的反馈内容：");
+            if (feedback == null) return;
+            batchLikeButton.setEnabled(false);
+            int count = 0;
+            for (ChatMessage message : chatMessages) {
+                if (!message.isUser() && isJavaCode(message.getContent())) {
+                    recordUserFeedbackEvent(message.getContent(), "LIKE", feedback);
+                    com.codereview.plugin.service.CodeGenerationStatisticsService.getInstance().sendStatistics(
+                        message.getUuid(),
+                        com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser(),
+                        extractClassName(message.getContent()),
+                        "1",
+                        "LIKE",
+                        feedback
+                    );
+                    count++;
+                }
+            }
+            JOptionPane.showMessageDialog(this, "批量点赞完成，共点赞 " + count + " 条消息", "提示", JOptionPane.INFORMATION_MESSAGE);
+        });
+
+        // 创建批量点踩按钮
+        JButton batchDislikeButton = new JButton("批量点踩");
+        batchDislikeButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
+        batchDislikeButton.setForeground(JBColor.foreground());
+        batchDislikeButton.setBackground(new JBColor(new Color(0xDC3545), new Color(0xDC3545)));
+        batchDislikeButton.setBorder(BorderFactory.createEmptyBorder(6, 12, 6, 12));
+        batchDislikeButton.setFocusPainted(false);
+        batchDislikeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        batchDislikeButton.setOpaque(true);
+        batchDislikeButton.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                batchDislikeButton.setBackground(new JBColor(new Color(0xC82333), new Color(0xC82333)));
+            }
+            @Override
+            public void mouseExited(MouseEvent e) {
+                batchDislikeButton.setBackground(new JBColor(new Color(0xDC3545), new Color(0xDC3545)));
+            }
+        });
+        batchDislikeButton.addActionListener(e -> {
+            String feedback = showFeedbackDialog("批量点踩反馈", "请填写本次批量点踩的反馈内容：");
+            if (feedback == null) return;
+            batchDislikeButton.setEnabled(false);
+            int count = 0;
+            for (ChatMessage message : chatMessages) {
+                if (!message.isUser() && isJavaCode(message.getContent())) {
+                    recordUserFeedbackEvent(message.getContent(), "DISLIKE", feedback);
+                    com.codereview.plugin.service.CodeGenerationStatisticsService.getInstance().sendStatistics(
+                        message.getUuid(),
+                        com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser(),
+                        extractClassName(message.getContent()),
+                        "1",
+                        "DISLIKE",
+                        feedback
+                    );
+                    count++;
+                }
+            }
+            JOptionPane.showMessageDialog(this, "批量点踩完成，共点踩 " + count + " 条消息", "提示", JOptionPane.INFORMATION_MESSAGE);
+        });
+
         // 添加到面板
         batchGeneratePanel.add(batchGenerateButton);
+        batchGeneratePanel.add(batchLikeButton);
+        batchGeneratePanel.add(batchDislikeButton);
 
         // 添加到聊天面板底部
         chatPanel.add(batchGeneratePanel);
@@ -1219,6 +1297,8 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         private final String uuid = java.util.UUID.randomUUID().toString();
         private final Map<String, String> msgMapping;
         private final boolean isWaitingTip;
+        private boolean liked = false;
+        private boolean disliked = false;
         public ChatMessage(String content, boolean isUser, Map<String, String> msgMapping) {
             this(content, isUser, msgMapping, false);
         }
@@ -1243,6 +1323,10 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         public void setGenerated(boolean generated) { this.generated = generated; }
         public String getUuid() { return uuid; }
         public Map<String, String> getMsgMapping() { return msgMapping; }
+        public boolean isLiked() { return liked; }
+        public void setLiked(boolean liked) { this.liked = liked; }
+        public boolean isDisliked() { return disliked; }
+        public void setDisliked(boolean disliked) { this.disliked = disliked; }
     }
 
     /**
