@@ -134,7 +134,8 @@ public class MainToolWindowPanel extends JBPanel<MainToolWindowPanel> {
         codeReviewPanel = new CodeReviewPanel(project);
         tabbedPane.addTab("代码审查", codeReviewPanel);
     }
-    
+
+
     /**
      * 切换到代码审查tab（供外部调用）
      */
