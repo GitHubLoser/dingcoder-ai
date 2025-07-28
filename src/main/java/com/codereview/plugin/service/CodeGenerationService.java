@@ -90,6 +90,22 @@ public final class CodeGenerationService {
         }
         
         try {
+            // 检查文件差异
+            FileDiffService fileDiffService = FileDiffService.getInstance(project);
+            if (fileDiffService != null) {
+                FileDiffService.FileDiffInfo diffInfo = fileDiffService.checkFileDifferences(className, javaCode, finalTargetDir);
+                
+                // 如果文件存在且有差异，显示差异对话框
+                if (diffInfo != null && diffInfo.hasDifferences() && showDialog) {
+                    boolean shouldOverwrite = com.codereview.plugin.ui.FileDiffDialog.showSingleFileDiff(project, diffInfo);
+                    if (!shouldOverwrite) {
+                        return false; // 用户选择跳过
+                    }
+                }
+            } else {
+                LOG.warn("FileDiffService实例创建失败，跳过差异检测");
+            }
+            
             // 在写命令中执行文件创建
             boolean[] success = {false};
             VirtualFile finalDir = finalTargetDir;
@@ -117,18 +133,6 @@ public final class CodeGenerationService {
                     String fileName = className + ".java";
                     VirtualFile existingFile = packageDir.findChild(fileName);
                     if (existingFile != null) {
-                        if (showDialog) {
-                            int result = JOptionPane.showConfirmDialog(
-                                null,
-                                "文件 " + fileName + " 已存在，是否覆盖？",
-                                "文件已存在",
-                                JOptionPane.YES_NO_OPTION,
-                                JOptionPane.QUESTION_MESSAGE
-                            );
-                            if (result != JOptionPane.YES_OPTION) {
-                                return;
-                            }
-                        }
                         // 删除现有文件
                         existingFile.delete(this);
                     }

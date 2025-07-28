@@ -2,6 +2,7 @@ package com.codereview.plugin.ui;
 
 import com.codereview.plugin.auth.AuthService;
 import com.codereview.plugin.service.*;
+import com.codereview.plugin.service.FileDiffService;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -1299,79 +1300,145 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             return;
         }
 
-        // 统计成功和失败的数量
-        int[] successCount = {0};
-        int[] failCount = {0};
-
-        // 遍历所有消息，找出包含Java代码的消息
+        // 收集所有要生成的文件信息
+        List<String> classNames = new ArrayList<>();
+        List<String> newContents = new ArrayList<>();
+        List<ChatMessage> messagesToGenerate = new ArrayList<>();
+        
         for (ChatMessage message : chatMessages) {
             if (!message.isUser() && !message.isGenerated()) {
                 String content = message.getContent();
                 if (isJavaCode(content)) {
-                    if (CodeGenerationService.getInstance(project).generateJavaFile(content, false, targetDir)) {
-                        successCount[0]++;
-                        message.setGenerated(true);
-                        
-                        // 记录代码生成统计
-                        String className = extractClassName(content);
-                        recordCodeGenerationEvent(content, className, true);
-                        
-                        // 写入msgMapping到多语言文件
-                        try {
-                            LOG.info("[多语言][DEBUG] 批量生成文件: message hashCode=" + System.identityHashCode(message) + ", msgMapping=" + message.getMsgMapping() + ", ref=" + System.identityHashCode(message.getMsgMapping()));
-                            Map<String, String> mappingMap = message.getMsgMapping();
-                            LOG.info("[多语言] 批量生成当前msgMapping Map内容: " + mappingMap);
-                            if (mappingMap != null && !mappingMap.isEmpty()) {
-                                for (Map.Entry<String, String> entry : mappingMap.entrySet()) {
-                                    String key = entry.getKey();
-                                    String value = entry.getValue();
-                                    LOG.info("[多语言] 批量生成写入前 key=" + key + ", value=" + value);
-                                    com.codereview.plugin.service.GenerateMessageMappingService.writeUnicodeProperties(project, key, value);
-                                    LOG.info("[多语言] 批量生成写入完成");
-                                }
-                                // 写入完成后再清空msgMapping
-                                com.codereview.plugin.service.MQTTService.getInstance().clearCodeGenerationMsgMapping();
-                            } else {
-                                LOG.info("[多语言] 批量生成未检测到msgMapping内容，无需写入");
-                            }
-                        } catch (Exception ex) {
-                            LOG.error("[多语言] 批量生成写入多语言文件失败", ex);
-                        }
-                        
-                        // 发送统计接口 type=0
-                        LOG.info("[统计] 批量生成即将上报 codeId=" + (message.getUuid()) + ", userName=" + com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser() + ", className=" + className + ", type=0");
-                        com.codereview.plugin.service.CodeGenerationStatisticsService.getInstance().sendStatistics(
-                            message.getUuid(),
-                            com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser(),
-                            className,
-                            "0",
-                            null,
-                            null
-                        );
-                        LOG.info("[统计] 批量生成sendStatistics已调用完成（type=0）");
-                    } else {
-                        failCount[0]++;
+                    String javaCode = extractJavaCode(content);
+                    String className = extractClassName(javaCode);
+                    if (className != null) {
+                        classNames.add(className);
+                        newContents.add(javaCode);
+                        messagesToGenerate.add(message);
                     }
                 }
             }
         }
 
-        // 显示结果
-        String resultMessage = String.format(
-            "批量生成完成：\n成功：%d个文件\n失败：%d个文件",
-            successCount[0],
-            failCount[0]
-        );
+        if (classNames.isEmpty()) {
+            JOptionPane.showMessageDialog(
+                this,
+                "没有找到需要生成的文件",
+                "提示",
+                JOptionPane.INFORMATION_MESSAGE
+            );
+            return;
+        }
 
-        JOptionPane.showMessageDialog(
-            this,
-            resultMessage,
-            "批量生成结果",
-            JOptionPane.INFORMATION_MESSAGE
-        );
+        // 检查文件差异
+        FileDiffService fileDiffService = FileDiffService.getInstance(project);
+        List<FileDiffService.FileDiffInfo> diffInfos = new ArrayList<>();
+        
+        if (fileDiffService != null) {
+            diffInfos = fileDiffService.batchCheckFileDifferences(classNames, newContents, targetDir);
+        } else {
+            LOG.warn("FileDiffService实例创建失败，跳过差异检测，直接生成文件");
+        }
+        
+        // 如果有差异文件，显示差异对话框
+        if (!diffInfos.isEmpty()) {
+            Boolean[] resolutionResults = com.codereview.plugin.ui.FileDiffDialog.showMultipleFileDiff(project, diffInfos);
+            if (resolutionResults == null) {
+                // 用户取消
+                return;
+            }
+            
+            // 根据用户选择处理文件
+            for (int i = 0; i < diffInfos.size(); i++) {
+                FileDiffService.FileDiffInfo diffInfo = diffInfos.get(i);
+                Boolean resolution = resolutionResults[i];
+                
+                if (resolution == null) {
+                    // 跳过此文件
+                    continue;
+                }
+                
+                // 找到对应的消息
+                int messageIndex = classNames.indexOf(diffInfo.getFileName().replace(".java", ""));
+                if (messageIndex >= 0) {
+                    ChatMessage message = messagesToGenerate.get(messageIndex);
+                    if (resolution) {
+                        // 覆盖文件
+                        generateFileWithDiffHandling(message, targetDir, true);
+                    } else {
+                        // 保留现有文件，但标记为已生成
+                        message.setGenerated(true);
+                    }
+                }
+            }
+        } else {
+            // 没有差异，直接生成所有文件
+            for (ChatMessage message : messagesToGenerate) {
+                generateFileWithDiffHandling(message, targetDir, false);
+            }
+        }
 
         // 刷新UI
         updateChatDisplay();
+        
+        // 显示结果
+        int generatedCount = (int) messagesToGenerate.stream().filter(ChatMessage::isGenerated).count();
+        JOptionPane.showMessageDialog(
+            this,
+            "批量生成完成：\n成功生成 " + generatedCount + " 个文件",
+            "批量生成结果",
+            JOptionPane.INFORMATION_MESSAGE
+        );
+    }
+
+    /**
+     * 生成文件并处理差异
+     */
+    private void generateFileWithDiffHandling(ChatMessage message, VirtualFile targetDir, boolean forceOverwrite) {
+        String content = message.getContent();
+        if (isJavaCode(content)) {
+            if (CodeGenerationService.getInstance(project).generateJavaFile(content, false, targetDir)) {
+                message.setGenerated(true);
+                
+                // 记录代码生成统计
+                String className = extractClassName(content);
+                recordCodeGenerationEvent(content, className, true);
+                
+                // 写入msgMapping到多语言文件
+                try {
+                    LOG.info("[多语言][DEBUG] 批量生成文件: message hashCode=" + System.identityHashCode(message) + ", msgMapping=" + message.getMsgMapping() + ", ref=" + System.identityHashCode(message.getMsgMapping()));
+                    Map<String, String> mappingMap = message.getMsgMapping();
+                    LOG.info("[多语言] 批量生成当前msgMapping Map内容: " + mappingMap);
+                    if (mappingMap != null && !mappingMap.isEmpty()) {
+                        for (Map.Entry<String, String> entry : mappingMap.entrySet()) {
+                            String key = entry.getKey();
+                            String value = entry.getValue();
+                            LOG.info("[多语言] 批量生成写入前 key=" + key + ", value=" + value);
+                            com.codereview.plugin.service.GenerateMessageMappingService.writeUnicodeProperties(project, key, value);
+                            LOG.info("[多语言] 批量生成写入完成");
+                        }
+                        // 写入完成后再清空msgMapping
+                        com.codereview.plugin.service.MQTTService.getInstance().clearCodeGenerationMsgMapping();
+                    } else {
+                        LOG.info("[多语言] 批量生成未检测到msgMapping内容，无需写入");
+                    }
+                } catch (Exception ex) {
+                    LOG.error("[多语言] 批量生成写入多语言文件失败", ex);
+                }
+                
+                // 发送统计接口 type=0
+                LOG.info("[统计] 批量生成即将上报 codeId=" + (message.getUuid()) + ", userName=" + com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser() + ", className=" + className + ", type=0");
+                com.codereview.plugin.service.CodeGenerationStatisticsService.getInstance().sendStatistics(
+                    message.getUuid(),
+                    com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser(),
+                    className,
+                    "0",
+                    null,
+                    null
+                );
+                LOG.info("[统计] 批量生成sendStatistics已调用完成（type=0）");
+            }
+        }
     }
 
     /**
@@ -1935,5 +2002,24 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                 button.setEnabled(true);
             }
         }
+    }
+
+    /**
+     * 从文本中提取Java代码块
+     */
+    private String extractJavaCode(String text) {
+        // 匹配```java代码块
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("```java\\s*\\n(.*?)\\n```", java.util.regex.Pattern.DOTALL);
+        java.util.regex.Matcher matcher = pattern.matcher(text);
+        if (matcher.find()) {
+            return matcher.group(1).trim();
+        }
+        
+        // 如果没有代码块标记，检查是否直接是Java代码
+        if (text.contains("class ") || text.contains("interface ") || text.contains("enum ")) {
+            return text.trim();
+        }
+        
+        return null;
     }
 } 
