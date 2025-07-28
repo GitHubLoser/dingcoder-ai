@@ -244,8 +244,8 @@ public class MainToolWindowPanel extends JBPanel<MainToolWindowPanel> {
                 userDropdown.setSelectedIndex(0);
             }
         } else {
+            // 未登录时，清空下拉框但不添加任何选项
             userDropdown.removeAllItems();
-            userDropdown.addItem("退出登录");
         }
         
         // 更新主内容区域

@@ -73,6 +73,14 @@ public final class AuthService {
     private static final long STATE_CACHE_DURATION = 50; // 50ms缓存时间，减少延迟
     
     /**
+     * 清除登录状态缓存，强制重新检测
+     */
+    public static void clearLoginCache() {
+        cachedLoginState = false;
+        lastStateCheckTime = 0;
+    }
+    
+    /**
      * 检查用户是否已登录（带缓存优化）
      */
     public boolean isLoggedIn() {
@@ -86,12 +94,14 @@ public final class AuthService {
         // 更新缓存时间
         lastStateCheckTime = currentTime;
         
-        // 检查实际状态（添加同步锁避免并发问题）
+        // 检查实际状态（优先使用全局状态，确保一致性）
         boolean actualState = false;
-        synchronized (this) {
+        synchronized (AuthService.class) {
+            // 优先检查全局状态，确保多窗口一致性
             if (globalLoginState && globalToken != null) {
                 actualState = true;
             } else if (isLoggedIn && token != null) {
+                // 如果全局状态为空，使用实例状态（向后兼容）
                 actualState = true;
             }
         }
@@ -181,17 +191,24 @@ public final class AuthService {
                     String token = String.valueOf(resultMap.get(CommonConstant.TOKEN));
                     String userSid = String.valueOf(resultMap.get(CommonConstant.SID));
                     
-                    // 更新全局状态
-                    globalToken = token;
-                    globalCurrentUser = username;
-                    globalLoginState = true;
-                    globalUserSid = userSid;
+                    // 更新全局状态（添加同步保护）
+                    synchronized (AuthService.class) {
+                        globalToken = token;
+                        globalCurrentUser = username;
+                        globalLoginState = true;
+                        globalUserSid = userSid;
+                    }
                     
-                    // 更新实例状态（向后兼容）
-                    this.token = token;
-                    this.currentUser = username;
-                    this.isLoggedIn = true;
-                    this.userSid = userSid;
+                    // 更新实例状态（向后兼容，添加同步保护）
+                    synchronized (this) {
+                        this.token = token;
+                        this.currentUser = username;
+                        this.isLoggedIn = true;
+                        this.userSid = userSid;
+                    }
+                    
+                    // 强制清除缓存，让其他窗口立即重新检测登录状态
+                    clearLoginCache();
                     
                     retrunMap.put(CommonConstant.TOKEN, token);
                     retrunMap.put(CommonConstant.USER_SID, resultMap.get(CommonConstant.SID));
@@ -356,21 +373,24 @@ public final class AuthService {
             log.error("断开MQTT连接时发生错误", e);
         }
         
-        // 清除全局状态
-        globalLoginState = false;
-        globalCurrentUser = null;
-        globalToken = null;
-        globalUserSid = null;
+        // 清除全局状态（添加同步保护）
+        synchronized (AuthService.class) {
+            globalLoginState = false;
+            globalCurrentUser = null;
+            globalToken = null;
+            globalUserSid = null;
+        }
         
-        // 清除实例状态
-        this.isLoggedIn = false;
-        this.currentUser = null;
-        this.token = null;
-        this.userSid = null;
+        // 清除实例状态（添加同步保护）
+        synchronized (this) {
+            this.isLoggedIn = false;
+            this.currentUser = null;
+            this.token = null;
+            this.userSid = null;
+        }
         
         // 清除缓存状态
-        cachedLoginState = false;
-        lastStateCheckTime = 0;
+        clearLoginCache();
         
         log.info("用户退出登录完成");
     }
@@ -379,22 +399,32 @@ public final class AuthService {
      * 获取当前用户名
      */
     public String getCurrentUser() {
-        // 优先使用全局状态
-        if (globalCurrentUser != null) {
-            return globalCurrentUser;
+        // 优先使用全局状态，添加同步保护
+        synchronized (AuthService.class) {
+            if (globalCurrentUser != null) {
+                return globalCurrentUser;
+            }
         }
-        return currentUser;
+        // 实例状态读取也需要同步保护
+        synchronized (this) {
+            return currentUser;
+        }
     }
 
     /**
      * 获取认证令牌
      */
     public String getToken() {
-        // 优先使用全局状态
-        if (globalToken != null) {
-            return globalToken;
+        // 优先使用全局状态，添加同步保护
+        synchronized (AuthService.class) {
+            if (globalToken != null) {
+                return globalToken;
+            }
         }
-        return token;
+        // 实例状态读取也需要同步保护
+        synchronized (this) {
+            return token;
+        }
     }
 
     /**
@@ -497,6 +527,15 @@ public final class AuthService {
      * 获取用户SID
      */
     public String getUserSid() {
-        return userSid;
+        // 优先使用全局状态，添加同步保护
+        synchronized (AuthService.class) {
+            if (globalUserSid != null) {
+                return globalUserSid;
+            }
+        }
+        // 实例状态读取也需要同步保护
+        synchronized (this) {
+            return userSid;
+        }
     }
 } 
