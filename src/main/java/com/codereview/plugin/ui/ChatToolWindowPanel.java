@@ -143,13 +143,12 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         welcomePanel.setBackground(BACKGROUND_COLOR);
         welcomePanel.setBorder(JBUI.Borders.empty(40));
 
-        JPanel centerPanel = new JBPanel<>();
-        centerPanel.setLayout(new BoxLayout(centerPanel, BoxLayout.Y_AXIS));
+        // 使用GridBagLayout确保完美居中
+        JPanel centerPanel = new JBPanel<>(new GridBagLayout());
         centerPanel.setOpaque(false);
 
         // Digiwin风格AI能量圈SVG，直接加载资源文件
         JLabel svgLabel = new JLabel();
-        svgLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
         svgLabel.setPreferredSize(new Dimension(80, 80));
         try {
             // IntelliJ平台推荐用IconLoader加载SVG
@@ -158,26 +157,33 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         } catch (Exception ex) {
             svgLabel.setText("D");
         }
-        centerPanel.add(Box.createVerticalStrut(8));
-        centerPanel.add(svgLabel);
-        centerPanel.add(Box.createVerticalStrut(16));
 
         // 登录提示或欢迎信息
         JBLabel descLabel = new JBLabel();
         descLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
         descLabel.setForeground(JBColor.GRAY);
-        descLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-        centerPanel.add(descLabel);
+        descLabel.setHorizontalAlignment(SwingConstants.CENTER);
 
         // 登录按钮（大按钮）
         JButton bigLoginButton = new JButton("登录后可使用");
         bigLoginButton.setPreferredSize(new Dimension(200, 40));
         bigLoginButton.setMaximumSize(new Dimension(200, 40));
-        bigLoginButton.setAlignmentX(Component.CENTER_ALIGNMENT);
         bigLoginButton.setEnabled(false);
 
-        centerPanel.add(Box.createVerticalStrut(24));
-        centerPanel.add(bigLoginButton);
+        // 使用GridBagConstraints进行精确布局
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.insets = new Insets(8, 0, 16, 0);
+        centerPanel.add(svgLabel, gbc);
+
+        gbc.gridy = 1;
+        gbc.insets = new Insets(0, 0, 24, 0);
+        centerPanel.add(descLabel, gbc);
+
+        gbc.gridy = 2;
+        gbc.insets = new Insets(0, 0, 0, 0);
+        centerPanel.add(bigLoginButton, gbc);
 
         welcomePanel.add(centerPanel, BorderLayout.CENTER);
 
@@ -321,12 +327,14 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         JButton bigLoginButton = (JButton) welcomePanel.getClientProperty("bigLoginButton");
 
         if (isLoggedIn) {
-            descLabel.setText("<html><center>我是你的AI编码助手，可以帮你生成校验器的代码，<br/>" +
-                    "只需要在输入框里输入api名称或者校验器的名称即可，<br/>" +
-                    "多个校验器之间用逗号隔开，例如：<br/>" +
-                    "bm.pre_item.create:VD_pre_item_00012,VD_pre_item_00015<br/>" +
-                    "现在就开始体验吧!" +
-                    "</center></html>");
+            descLabel.setText("<html>🎉 欢迎使用鼎码智辅！<br/>" +
+                    "我是你的AI编码助手，可以帮你快速生成校验器代码<br/>" +
+                    "💡 使用方法很简单：<br/>" +
+                    "在输入框中输入API名称或校验器名称即可<br/>" +
+                    "多个校验器用逗号分隔，例如：<br/>" +
+                    "<code>bm.pre_item.create:VD_pre_item_00012,VD_pre_item_00015</code><br/>" +
+                    "🚀 现在就开始你的AI编程之旅吧！" +
+                    "</html>");
             bigLoginButton.setVisible(false);
 
             // 如果没有聊天消息，显示欢迎面板
