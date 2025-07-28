@@ -62,10 +62,14 @@ public final class CodeGenerationService {
      * @return 是否成功生成文件
      */
     public boolean generateJavaFile(String codeText, boolean showDialog, @Nullable VirtualFile targetDirectory) {
+        return generateJavaFile(codeText, showDialog, showDialog, targetDirectory);
+    }
+    
+    public boolean generateJavaFile(String codeText, boolean showDiffDialog, boolean showSuccessDialog, @Nullable VirtualFile targetDirectory) {
         // 提取Java代码块
         String javaCode = extractJavaCode(codeText);
         if (javaCode == null || javaCode.trim().isEmpty()) {
-            if (showDialog) {
+            if (showDiffDialog) {
                 JOptionPane.showMessageDialog(null, "未找到有效的Java代码", "错误", JOptionPane.ERROR_MESSAGE);
             }
             return false;
@@ -74,7 +78,7 @@ public final class CodeGenerationService {
         // 提取类名
         String className = extractClassName(javaCode);
         if (className == null) {
-            if (showDialog) {
+            if (showDiffDialog) {
                 JOptionPane.showMessageDialog(null, "无法确定类名", "错误", JOptionPane.ERROR_MESSAGE);
             }
             return false;
@@ -83,7 +87,7 @@ public final class CodeGenerationService {
         // 确定目标目录
         VirtualFile finalTargetDir = targetDirectory;
         if (finalTargetDir == null) {
-            finalTargetDir = getTargetDirectory(showDialog);
+            finalTargetDir = getTargetDirectory(showDiffDialog);
             if (finalTargetDir == null) {
                 return false; // 用户取消了目录选择
             }
@@ -96,7 +100,7 @@ public final class CodeGenerationService {
                 FileDiffService.FileDiffInfo diffInfo = fileDiffService.checkFileDifferences(className, javaCode, finalTargetDir);
                 
                 // 如果文件存在且有差异，显示差异对话框
-                if (diffInfo != null && diffInfo.hasDifferences() && showDialog) {
+                if (diffInfo != null && diffInfo.hasDifferences() && showDiffDialog) {
                     boolean shouldOverwrite = com.codereview.plugin.ui.FileDiffDialog.showSingleFileDiff(project, diffInfo);
                     if (!shouldOverwrite) {
                         return false; // 用户选择跳过
@@ -153,7 +157,7 @@ public final class CodeGenerationService {
                     success[0] = true;
                     LOG.info("成功生成Java文件: " + javaFile.getPath());
                     
-                    if (showDialog) {
+                    if (showSuccessDialog) {
                         ApplicationManager.getApplication().invokeLater(() -> {
                             JOptionPane.showMessageDialog(
                                 null,
@@ -166,7 +170,7 @@ public final class CodeGenerationService {
                     
                 } catch (Exception e) {
                     LOG.error("生成Java文件时出错", e);
-                    if (showDialog) {
+                    if (showSuccessDialog) {
                         ApplicationManager.getApplication().invokeLater(() -> {
                             JOptionPane.showMessageDialog(
                                 null,
@@ -183,7 +187,7 @@ public final class CodeGenerationService {
             
         } catch (Exception e) {
             LOG.error("生成Java文件时出错", e);
-            if (showDialog) {
+            if (showSuccessDialog) {
                 JOptionPane.showMessageDialog(
                     null,
                     "生成文件时出错: " + e.getMessage(),
