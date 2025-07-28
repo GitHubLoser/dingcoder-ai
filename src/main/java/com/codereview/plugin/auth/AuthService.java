@@ -20,6 +20,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Consumer;
+import com.intellij.openapi.project.Project;
 
 /**
  * 认证服务类 
@@ -37,6 +38,13 @@ public final class AuthService {
     private  static final String loginUrl = "/api/iam/v2/identity/login";
 
 
+    // 全局登录状态管理
+    private static volatile boolean globalLoginState = false;
+    private static volatile String globalCurrentUser = null;
+    private static volatile String globalToken = null;
+    private static volatile String globalUserSid = null;
+    
+    // 实例级别的状态（向后兼容）
     private boolean isLoggedIn = false;
     private String currentUser = null;
     private String token = null;
@@ -46,18 +54,51 @@ public final class AuthService {
 
 
     /**
-     * 获取认证服务的实例
+     * 获取认证服务的实例（Project级别）
+     */
+    public static AuthService getInstance(Project project) {
+        return project.getService(AuthService.class);
+    }
+
+    /**
+     * 获取认证服务的实例（向后兼容，返回全局实例）
      */
     public static AuthService getInstance() {
         return com.intellij.openapi.application.ApplicationManager.getApplication().getService(AuthService.class);
     }
 
+    // 添加状态缓存，避免频繁检查
+    private static volatile boolean cachedLoginState = false;
+    private static volatile long lastStateCheckTime = 0;
+    private static final long STATE_CACHE_DURATION = 50; // 50ms缓存时间，减少延迟
+    
     /**
-     * 检查用户是否已登录
+     * 检查用户是否已登录（带缓存优化）
      */
     public boolean isLoggedIn() {
-        // 在实际应用中，应该检查token是否有效
-        return isLoggedIn && token != null;
+        long currentTime = System.currentTimeMillis();
+        
+        // 如果缓存时间未过期，直接返回缓存状态
+        if (currentTime - lastStateCheckTime < STATE_CACHE_DURATION) {
+            return cachedLoginState;
+        }
+        
+        // 更新缓存时间
+        lastStateCheckTime = currentTime;
+        
+        // 检查实际状态（添加同步锁避免并发问题）
+        boolean actualState = false;
+        synchronized (this) {
+            if (globalLoginState && globalToken != null) {
+                actualState = true;
+            } else if (isLoggedIn && token != null) {
+                actualState = true;
+            }
+        }
+        
+        // 更新缓存状态
+        cachedLoginState = actualState;
+        return actualState;
     }
 
 
@@ -136,12 +177,21 @@ public final class AuthService {
 //                javax.swing.JOptionPane.showMessageDialog(null, "步骤6: 收到服务器响应: " + (resultMap != null ? resultMap.toString() : "null"), "登录调试", javax.swing.JOptionPane.INFORMATION_MESSAGE);
                 
                 if (resultMap != null && resultMap.get(CommonConstant.TOKEN) != null) {
-                    // 登录成功，更新内部状态
+                    // 登录成功，更新全局状态和内部状态
                     String token = String.valueOf(resultMap.get(CommonConstant.TOKEN));
+                    String userSid = String.valueOf(resultMap.get(CommonConstant.SID));
+                    
+                    // 更新全局状态
+                    globalToken = token;
+                    globalCurrentUser = username;
+                    globalLoginState = true;
+                    globalUserSid = userSid;
+                    
+                    // 更新实例状态（向后兼容）
                     this.token = token;
                     this.currentUser = username;
                     this.isLoggedIn = true;
-                    this.userSid = String.valueOf(resultMap.get(CommonConstant.SID));
+                    this.userSid = userSid;
                     
                     retrunMap.put(CommonConstant.TOKEN, token);
                     retrunMap.put(CommonConstant.USER_SID, resultMap.get(CommonConstant.SID));
@@ -285,10 +335,12 @@ public final class AuthService {
     public void logout() {
         log.info("用户 {} 开始退出登录", currentUser);
         
-        // 清空面板内容
+        // 清空面板内容并更新所有窗口UI状态
         try {
             // 通过ChatToolWindowFactory获取当前面板实例并清空内容
             com.codereview.plugin.ui.ChatToolWindowFactory.clearCurrentPanelContent();
+            // 强制更新所有窗口的UI状态
+            com.codereview.plugin.ui.ChatToolWindowFactory.updateCurrentPanelStatus();
         } catch (Exception e) {
             log.error("清空面板内容时发生错误", e);
         }
@@ -304,11 +356,21 @@ public final class AuthService {
             log.error("断开MQTT连接时发生错误", e);
         }
         
-        // 清除用户状态
+        // 清除全局状态
+        globalLoginState = false;
+        globalCurrentUser = null;
+        globalToken = null;
+        globalUserSid = null;
+        
+        // 清除实例状态
         this.isLoggedIn = false;
         this.currentUser = null;
         this.token = null;
         this.userSid = null;
+        
+        // 清除缓存状态
+        cachedLoginState = false;
+        lastStateCheckTime = 0;
         
         log.info("用户退出登录完成");
     }
@@ -317,6 +379,10 @@ public final class AuthService {
      * 获取当前用户名
      */
     public String getCurrentUser() {
+        // 优先使用全局状态
+        if (globalCurrentUser != null) {
+            return globalCurrentUser;
+        }
         return currentUser;
     }
 
@@ -324,6 +390,10 @@ public final class AuthService {
      * 获取认证令牌
      */
     public String getToken() {
+        // 优先使用全局状态
+        if (globalToken != null) {
+            return globalToken;
+        }
         return token;
     }
 

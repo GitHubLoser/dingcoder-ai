@@ -30,6 +30,7 @@ import java.util.Map;
 import java.util.HashMap;
 import java.util.Properties;
 import java.util.Random;
+import java.util.concurrent.ConcurrentHashMap;
 import java.io.InputStream;
 import javax.swing.JOptionPane;
 import java.io.InputStreamReader;
@@ -47,10 +48,18 @@ import javax.swing.border.Border;
 public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     private static final Logger LOG = Logger.getInstance(ChatToolWindowPanel.class);
 
-    private static ChatToolWindowPanel instance;
+    private static final Map<Project, ChatToolWindowPanel> projectInstances = new ConcurrentHashMap<>();
+
+    public static ChatToolWindowPanel getInstance(Project project) {
+        return projectInstances.get(project);
+    }
 
     public static ChatToolWindowPanel getInstance() {
-        return instance;
+        // 向后兼容，返回第一个可用的实例
+        if (!projectInstances.isEmpty()) {
+            return projectInstances.values().iterator().next();
+        }
+        return null;
     }
 
     private final Project project;
@@ -96,16 +105,51 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         this.authService = AuthService.getInstance();
         this.mqttService = MQTTService.getInstance();
         this.validateSpecService = new ValidateSpecService();
-        instance = this;
+        projectInstances.put(project, this);
 
         LOG.info("创建ChatToolWindowPanel实例");
 
         initializeUI();
-        updateUIState();
-
-        // 确保MQTT消息回调总是被设置
-        LOG.info("设置MQTT消息回调");
-        setMqttCallback();
+        
+        // 延迟更新UI状态和设置MQTT回调，避免启动时卡顿
+        SwingUtilities.invokeLater(() -> {
+            try {
+                updateUIState();
+            } catch (Exception e) {
+                // 忽略更新时的异常，确保不影响IDEA启动
+            }
+        });
+        
+        // 进一步延迟MQTT设置，避免多个窗口同时初始化
+        SwingUtilities.invokeLater(() -> {
+            try {
+                // 确保MQTT消息回调总是被设置
+                LOG.info("设置MQTT消息回调");
+                setMqttCallback();
+            } catch (Exception e) {
+                // 忽略MQTT设置时的异常，确保不影响IDEA启动
+            }
+        });
+        
+        // 添加窗口激活监听，确保登录状态同步（优化版本）
+        addComponentListener(new java.awt.event.ComponentAdapter() {
+            private boolean hasInitialized = false;
+            
+            @Override
+            public void componentShown(java.awt.event.ComponentEvent e) {
+                // 只在首次显示时更新UI状态，避免重复调用
+                if (!hasInitialized) {
+                    hasInitialized = true;
+                    SwingUtilities.invokeLater(() -> {
+                        try {
+                            updateUIState();
+                        } catch (Exception ex) {
+                            // 忽略更新时的异常
+                        }
+                    });
+                }
+            }
+        });
     }
 
     private void initializeUI() {
@@ -244,12 +288,30 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
 
         // 添加文档监听器来处理高度自适应
         inputField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            private int lastRowCount = 1;
+            private javax.swing.Timer adjustTimer = null;
+            
             private void adjustRows() {
                 int lines = inputField.getLineCount();
                 int minRows = 1, maxRows = 6;
                 int rows = Math.max(minRows, Math.min(maxRows, lines));
-                inputField.setRows(rows);
-                inputField.revalidate();
+                
+                // 只有在行数真正改变时才更新
+                if (rows != lastRowCount) {
+                    lastRowCount = rows;
+                    inputField.setRows(rows);
+                    
+                    // 使用延迟更新，避免频繁重绘
+                    if (adjustTimer != null) {
+                        adjustTimer.stop();
+                    }
+                    adjustTimer = new javax.swing.Timer(100, e -> {
+                        inputField.revalidate();
+                        ((javax.swing.Timer) e.getSource()).stop();
+                    });
+                    adjustTimer.setRepeats(false);
+                    adjustTimer.start();
+                }
             }
             @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { adjustRows(); }
             @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { adjustRows(); }
@@ -323,11 +385,27 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         return outerPanel;
     }
 
+    // 添加状态缓存，避免频繁更新
+    private boolean lastChatLoginState = false;
+    private boolean lastWaitingState = false;
+    
     /**
-     * 更新UI状态
+     * 更新UI状态（优化版本）
      */
     public void updateUIState() {
         boolean isLoggedIn = authService.isLoggedIn();
+        
+        // 检查状态是否真的发生了变化
+        boolean stateChanged = (isLoggedIn != lastChatLoginState) || 
+                             (isWaitingForGeneration != lastWaitingState);
+        
+        if (!stateChanged) {
+            return; // 状态没有变化，不需要更新UI
+        }
+        
+        // 更新缓存状态
+        lastChatLoginState = isLoggedIn;
+        lastWaitingState = isWaitingForGeneration;
 
         // 更新欢迎面板状态
         JBLabel descLabel = (JBLabel) welcomePanel.getClientProperty("descLabel");
@@ -335,12 +413,6 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
 
         if (isLoggedIn) {
             descLabel.setText("<html>我是你的AI编码助手，欢迎使用鼎码智辅！🎉 <br/>" +
-//                    "可以帮你快速生成校验器代码<br/>" +
-//                    "💡 使用方法很简单：<br/>" +
-//                    "在输入框中输入API名称或校验器名称即可<br/>" +
-//                    "多个校验器用逗号分隔，例如：<br/>" +
-//                    "<code>bm.pre_item.create:VD_pre_item_00012,VD_pre_item_00015</code><br/>" +
-//                    "🚀 现在就开始你的AI编程之旅吧！" +
                     "</html>");
             bigLoginButton.setVisible(false);
 
@@ -359,38 +431,46 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         // 输入框可编辑状态：登录状态 && 不在等待生成状态
         inputField.setEditable(isLoggedIn && !isWaitingForGeneration);
         
-        // 登录后延迟解锁发送按钮，避免race condition
-        if (isLoggedIn && isWaitingForGeneration == false) {
-            sendButton.setEnabled(false);
-            new javax.swing.Timer(300, e -> {
+        // 更新发送按钮状态
+        if (isLoggedIn) {
+            // 登录状态下的发送按钮逻辑
+            if (isWaitingForGeneration == false) {
+                sendButton.setEnabled(false);
+                // 使用Timer而不是Thread.sleep，避免阻塞UI线程
+                javax.swing.Timer timer = new javax.swing.Timer(300, e -> {
+                    sendButton.setEnabled(true);
+                    sendButton.setText("发送");
+                    sendButton.setBackground(SEND_BUTTON_COLOR);
+                    sendButton.setBorder(new RoundedBorder(6, SEND_BUTTON_COLOR, 0));
+                    ((javax.swing.Timer) e.getSource()).stop();
+                });
+                timer.setRepeats(false);
+                timer.start();
+            } else {
+                // 等待生成状态
                 sendButton.setEnabled(true);
-                sendButton.setText("发送");
-                sendButton.setBackground(SEND_BUTTON_COLOR);
-                sendButton.setBorder(new RoundedBorder(6, SEND_BUTTON_COLOR, 0));
-                ((javax.swing.Timer) e.getSource()).stop();
-            }).start();
-        } else {
-            // 发送按钮状态：登录状态 && 不在等待生成状态
-            boolean canSend = isLoggedIn && !isWaitingForGeneration;
-            sendButton.setEnabled(canSend);
-            // 更新发送按钮样式
-            if (canSend) {
-                sendButton.setText("发送");
-                sendButton.setBackground(SEND_BUTTON_COLOR);
-                sendButton.setBorder(new RoundedBorder(6, SEND_BUTTON_COLOR, 0));
-            } else if (isWaitingForGeneration) {
                 sendButton.setText("停止生成");
                 sendButton.setBackground(SEND_BUTTON_DISABLED_COLOR);
                 sendButton.setBorder(new RoundedBorder(6, SEND_BUTTON_DISABLED_COLOR, 0));
-            } else {
-                sendButton.setText("发送");
-                sendButton.setBackground(SEND_BUTTON_DISABLED_COLOR);
-                sendButton.setBorder(new RoundedBorder(6, SEND_BUTTON_DISABLED_COLOR, 0));
             }
+        } else {
+            // 未登录状态：重置所有状态
+            isWaitingForGeneration = false;
+            sendButton.setEnabled(false);
+            sendButton.setText("发送");
+            sendButton.setBackground(SEND_BUTTON_DISABLED_COLOR);
+            sendButton.setBorder(new RoundedBorder(6, SEND_BUTTON_DISABLED_COLOR, 0));
         }
 
-        revalidate();
-        repaint();
+        // 延迟UI更新，避免频繁重绘
+        SwingUtilities.invokeLater(() -> {
+            try {
+                revalidate();
+                repaint();
+            } catch (Exception e) {
+                // 忽略UI更新异常
+            }
+        });
     }
 
 
@@ -400,9 +480,16 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         if (input.isEmpty() || isWaitingForGeneration) {
             return;
         }
+        
+        // 检查登录状态，如果未登录则尝试更新UI状态后再检查
         if (!authService.isLoggedIn()) {
-            JOptionPane.showMessageDialog(this, "登录状态未同步，请退出再试", "提示", JOptionPane.WARNING_MESSAGE);
-            return;
+            // 先更新UI状态，可能全局状态已经同步但UI还没更新
+            updateUIState();
+            // 再次检查登录状态
+            if (!authService.isLoggedIn()) {
+                JOptionPane.showMessageDialog(this, "登录状态未同步，请退出再试", "提示", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
         }
         
         // 检查当前选择的路径是否正确
@@ -463,6 +550,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                 }
             }
         });
+        waitingTimer.setRepeats(true); // 明确设置为重复执行
         waitingTimer.start();
         // 立即切换到聊天面板
         if (chatScrollPane.getViewport().getView() == welcomePanel) {
@@ -553,40 +641,53 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         addAssistantMessage(message, false);
     }
 
+    // 添加缓存，避免频繁重建
+    private int lastMessageCount = 0;
+    
     private void updateChatDisplay() {
-        // 保存批量按钮面板
-        JPanel batchGeneratePanel = null;
-        Component[] components = chatPanel.getComponents();
-        for (Component component : components) {
-            if (component instanceof JPanel && component.getName() != null && component.getName().equals("batchGeneratePanel")) {
-                batchGeneratePanel = (JPanel) component;
-                break;
+        // 检查是否需要完全重建
+        boolean needFullRebuild = (chatMessages.size() != lastMessageCount);
+        
+        if (needFullRebuild) {
+            // 保存批量按钮面板
+            JPanel batchGeneratePanel = null;
+            Component[] components = chatPanel.getComponents();
+            for (Component component : components) {
+                if (component instanceof JPanel && component.getName() != null && component.getName().equals("batchGeneratePanel")) {
+                    batchGeneratePanel = (JPanel) component;
+                    break;
+                }
             }
-        }
-        
-        // 清空聊天面板和映射关系
-        chatPanel.removeAll();
-        messagePanelMap.clear();
+            
+            // 清空聊天面板和映射关系
+            chatPanel.removeAll();
+            messagePanelMap.clear();
 
-        // 重新添加所有消息
-        for (ChatMessage message : chatMessages) {
-            chatPanel.add(createMessagePanelWithMapping(message));
+            // 重新添加所有消息
+            for (ChatMessage message : chatMessages) {
+                chatPanel.add(createMessagePanelWithMapping(message));
+            }
+            
+            // 重新添加批量按钮面板（只有在之前存在时才添加）
+            if (batchGeneratePanel != null) {
+                chatPanel.add(batchGeneratePanel);
+            }
+            
+            lastMessageCount = chatMessages.size();
         }
-        
-        // 重新添加批量按钮面板（只有在之前存在时才添加）
-        if (batchGeneratePanel != null) {
-            chatPanel.add(batchGeneratePanel);
-        }
-        // 移除自动重新创建批量按钮的逻辑
 
-        // 刷新UI
-        chatPanel.revalidate();
-        chatPanel.repaint();
-
-        // 滚动到底部
+        // 延迟刷新UI，避免频繁重绘
         SwingUtilities.invokeLater(() -> {
-            JScrollBar vertical = chatScrollPane.getVerticalScrollBar();
-            vertical.setValue(vertical.getMaximum());
+            try {
+                chatPanel.revalidate();
+                chatPanel.repaint();
+
+                // 滚动到底部
+                JScrollBar vertical = chatScrollPane.getVerticalScrollBar();
+                vertical.setValue(vertical.getMaximum());
+            } catch (Exception e) {
+                // 忽略UI更新异常
+            }
         });
     }
 
@@ -1688,7 +1789,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     private void setMqttCallback() {
         if (mqttService != null) {
             LOG.info("开始设置代码生成MQTT回调函数");
-            mqttService.setMessageCallback(MQTTService.FUNCTION_CODE_GENERATION, this::onMQTTMessage);
+            mqttService.setMessageCallback(MQTTService.FUNCTION_CODE_GENERATION, this::onMQTTMessage, project);
             LOG.info("强制设置code_generation MQTT回调函数为当前实例");
         } else {
             LOG.error("MQTT服务实例为空，无法设置回调");
@@ -1701,7 +1802,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             Consumer<String> currentCallback = mqttService.getMessageCallback(MQTTService.FUNCTION_CODE_GENERATION);
             if (currentCallback == null) {
                 LOG.info("检测到code_generation回调未设置，重新设置");
-                mqttService.setMessageCallback(MQTTService.FUNCTION_CODE_GENERATION, this::onMQTTMessage);
+                mqttService.setMessageCallback(MQTTService.FUNCTION_CODE_GENERATION, this::onMQTTMessage, project);
                 LOG.info("code_generation MQTT回调函数重新设置完成");
             } else {
                 LOG.info("code_generation MQTT回调函数已设置");

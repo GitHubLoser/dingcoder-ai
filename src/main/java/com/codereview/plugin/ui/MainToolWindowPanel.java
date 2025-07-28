@@ -44,7 +44,14 @@ public class MainToolWindowPanel extends JBPanel<MainToolWindowPanel> {
         this.authService = AuthService.getInstance();
         
         initializeUI();
-        updateUIState();
+        // 延迟更新UI状态，避免启动时卡顿
+        SwingUtilities.invokeLater(() -> {
+            try {
+                updateUIState();
+            } catch (Exception e) {
+                // 忽略更新时的异常，确保不影响IDEA启动
+            }
+        });
     }
     
     private void initializeUI() {
@@ -68,6 +75,20 @@ public class MainToolWindowPanel extends JBPanel<MainToolWindowPanel> {
         } else {
             add(loginPromptPanel, BorderLayout.CENTER);
         }
+        
+        // 添加窗口激活监听，确保登录状态同步（优化版本）
+        addComponentListener(new java.awt.event.ComponentAdapter() {
+            private boolean hasInitialized = false;
+            
+            @Override
+            public void componentShown(java.awt.event.ComponentEvent e) {
+                // 只在首次显示时更新UI状态，避免无限循环
+                if (!hasInitialized) {
+                    hasInitialized = true;
+                    SwingUtilities.invokeLater(() -> updateUIState());
+                }
+            }
+        });
     }
     
     private void createHeaderPanel() {
@@ -189,17 +210,37 @@ public class MainToolWindowPanel extends JBPanel<MainToolWindowPanel> {
         }
     }
     
+    // 添加状态缓存，避免频繁更新
+    private boolean lastLoginState = false;
+    private String lastUserName = null;
+    
     public void updateUIState() {
         boolean isLoggedIn = authService.isLoggedIn();
+        String currentUser = authService.getCurrentUser();
+        
+        // 检查状态是否真的发生了变化
+        boolean stateChanged = (isLoggedIn != lastLoginState) || 
+                             (isLoggedIn && !currentUser.equals(lastUserName));
+        
+        if (!stateChanged) {
+            return; // 状态没有变化，不需要更新UI
+        }
+        
+        // 更新缓存状态
+        lastLoginState = isLoggedIn;
+        lastUserName = currentUser;
         
         // 更新头部面板中的组件
         loginButton.setVisible(!isLoggedIn);
         userDropdown.setVisible(isLoggedIn);
         
         if (isLoggedIn) {
-            String currentUser = authService.getCurrentUser();
             if (currentUser != null && !currentUser.isEmpty()) {
-                userDropdown.insertItemAt(currentUser, 0);
+                // 先清空所有项
+                userDropdown.removeAllItems();
+                // 添加用户名和退出登录选项
+                userDropdown.addItem(currentUser);
+                userDropdown.addItem("退出登录");
                 userDropdown.setSelectedIndex(0);
             }
         } else {
@@ -217,12 +258,21 @@ public class MainToolWindowPanel extends JBPanel<MainToolWindowPanel> {
             add(loginPromptPanel, BorderLayout.CENTER);
         }
         
-        // 刷新面板
-        revalidate();
-        repaint();
+        // 延迟刷新面板，避免频繁重绘
+        SwingUtilities.invokeLater(() -> {
+            try {
+                revalidate();
+                repaint();
+            } catch (Exception e) {
+                // 忽略UI更新异常
+            }
+        });
         
         // 更新子面板状态
         if (isLoggedIn && codeGenerationPanel != null) {
+            codeGenerationPanel.updateUIState();
+        } else if (!isLoggedIn && codeGenerationPanel != null) {
+            // 退出登录时，强制更新子面板状态
             codeGenerationPanel.updateUIState();
         }
     }

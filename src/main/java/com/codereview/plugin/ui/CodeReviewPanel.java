@@ -63,6 +63,8 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.codereview.plugin.service.MQTTService;
 import com.google.gson.JsonObject;
@@ -102,7 +104,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
     private java.util.Map<Integer, MqttMessageData> mqttDataMap = new java.util.HashMap<>();
     
     // 静态引用，供外部访问
-    private static CodeReviewPanel instance;
+    private static final Map<Project, CodeReviewPanel> projectInstances = new ConcurrentHashMap<>();
     
     // 颜色主题
     private static final Color BACKGROUND_COLOR = new JBColor(Color.WHITE, new Color(43, 43, 43));
@@ -114,7 +116,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         this.project = project;
         this.reviewService = ReviewService.getInstance(project);
         this.feedbackService = ReviewFeedbackService.getInstance();
-        instance = this; // 设置静态引用
+        projectInstances.put(project, this);
         
         initializeUI();
         
@@ -122,8 +124,16 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         setCodeReviewMqttCallback();
     }
     
+    public static CodeReviewPanel getInstance(Project project) {
+        return projectInstances.get(project);
+    }
+
     public static CodeReviewPanel getInstance() {
-        return instance;
+        // 向后兼容，返回第一个可用的实例
+        if (!projectInstances.isEmpty()) {
+            return projectInstances.values().iterator().next();
+        }
+        return null;
     }
     
     private void initializeUI() {
@@ -174,12 +184,19 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         SwingUtilities.invokeLater(() -> adjustSplitPaneLocations(topSplitPane, bottomSplitPane));
     }
     
+    // 添加缓存，避免频繁调整
+    private int lastTotalHeight = 0;
+    
     /**
-     * 根据当前面板大小调整分割位置
+     * 根据当前面板大小调整分割位置（优化版本）
      */
     private void adjustSplitPaneLocations(JSplitPane topSplitPane, JSplitPane bottomSplitPane) {
         int totalHeight = getHeight();
-        if (totalHeight > 0) {
+        
+        // 只有在高度真正改变时才调整
+        if (totalHeight > 0 && totalHeight != lastTotalHeight) {
+            lastTotalHeight = totalHeight;
+            
             // 文件区域：最小200px，最大400px，占总高度的25%
             int fileAreaHeight = Math.max(200, Math.min(400, (int)(totalHeight * 0.25)));
             
@@ -190,9 +207,15 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             topSplitPane.setDividerLocation(fileAreaHeight);
             bottomSplitPane.setDividerLocation(changesAreaHeight);
             
-            // 强制重新验证和重绘
-            topSplitPane.revalidate();
-            bottomSplitPane.revalidate();
+            // 延迟重新验证和重绘，避免频繁更新
+            SwingUtilities.invokeLater(() -> {
+                try {
+                    topSplitPane.revalidate();
+                    bottomSplitPane.revalidate();
+                } catch (Exception e) {
+                    // 忽略UI更新异常
+                }
+            });
         }
     }
     
@@ -1083,7 +1106,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
     public void dispose() {
         try {
             // 清理资源
-            instance = null;
+            projectInstances.remove(project);
             
             // 清理MQTT回调
             try {
@@ -1117,7 +1140,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             MQTTService mqttService = MQTTService.getInstance();
             if (mqttService != null) {
                 LOG.info("开始设置代码审查MQTT回调函数");
-                mqttService.setMessageCallback(MQTTService.FUNCTION_CODE_REVIEW, this::onCodeReviewMqttMessage);
+                mqttService.setMessageCallback(MQTTService.FUNCTION_CODE_REVIEW, this::onCodeReviewMqttMessage, project);
                 LOG.info("代码审查MQTT回调函数设置完成");
                 
                 // 如果MQTT还没连接，延迟重试设置回调
@@ -1128,7 +1151,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                             try {
                                 if (mqttService.isConnected()) {
                                     LOG.info("MQTT已连接，重新设置代码审查回调");
-                                    mqttService.setMessageCallback(MQTTService.FUNCTION_CODE_REVIEW, this::onCodeReviewMqttMessage);
+                                    mqttService.setMessageCallback(MQTTService.FUNCTION_CODE_REVIEW, this::onCodeReviewMqttMessage, project);
                                     LOG.info("延迟设置代码审查MQTT回调函数完成");
                                     ((Timer) e.getSource()).stop();
                                 }
@@ -1158,7 +1181,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                 Consumer<String> currentCallback = mqttService.getMessageCallback(MQTTService.FUNCTION_CODE_REVIEW);
                 if (currentCallback == null) {
                     LOG.info("检测到代码审查回调未设置，重新设置");
-                    mqttService.setMessageCallback(MQTTService.FUNCTION_CODE_REVIEW, this::onCodeReviewMqttMessage);
+                    mqttService.setMessageCallback(MQTTService.FUNCTION_CODE_REVIEW, this::onCodeReviewMqttMessage, project);
                     LOG.info("代码审查MQTT回调函数重新设置完成");
                 } else {
                     LOG.info("代码审查MQTT回调函数已设置");

@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.concurrent.ConcurrentHashMap;
+import com.intellij.openapi.project.Project;
 import org.apache.commons.text.StringEscapeUtils;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
@@ -41,7 +42,10 @@ public final class MQTTService {
     private String currentUserSid;
     private final ObjectMapper objectMapper = new ObjectMapper();
     
-    // 多topic回调映射
+    // Project级别的回调映射
+    private final Map<Project, Map<String, Consumer<String>>> projectCallbacks = new ConcurrentHashMap<>();
+    
+    // 向后兼容：全局回调映射
     private final Map<String, Consumer<String>> topicCallbacks = new ConcurrentHashMap<>();
     
     // 添加消息缓存队列
@@ -52,7 +56,14 @@ public final class MQTTService {
     private Map<String, String> lastCodeGenerationMsgMappingMap = null;
 
     /**
-     * 获取MQTT服务实例
+     * 获取MQTT服务实例（Project级别）
+     */
+    public static MQTTService getInstance(Project project) {
+        return project.getService(MQTTService.class);
+    }
+
+    /**
+     * 获取MQTT服务实例（向后兼容，返回全局实例）
      */
     public static MQTTService getInstance() {
         return com.intellij.openapi.application.ApplicationManager.getApplication().getService(MQTTService.class);
@@ -114,27 +125,53 @@ public final class MQTTService {
                         if (parsedContent != null) {
                             LOG.info("消息解析结果 - 功能类型: " + functionType + ", 内容: " + parsedContent);
                             
-                            synchronized (messageLock) {
-                                // 根据功能类型找到对应的回调函数
-                                Consumer<String> callback = topicCallbacks.get(functionType);
+                                                    synchronized (messageLock) {
+                            // 广播给所有已注册的Project
+                            boolean messageHandled = false;
+                            
+                            for (Map.Entry<Project, Map<String, Consumer<String>>> entry : projectCallbacks.entrySet()) {
+                                Project project = entry.getKey();
+                                Map<String, Consumer<String>> callbacks = entry.getValue();
+                                
+                                Consumer<String> callback = callbacks.get(functionType);
                                 if (callback != null) {
-                                    // 在EDT线程中调用回调
-                                    LOG.info("准备在EDT线程中执行回调，功能类型: " + functionType);
+                                    // 在对应Project的EDT线程中执行回调
+                                    LOG.info("准备在Project " + project.getName() + " 的EDT线程中执行回调，功能类型: " + functionType);
                                     com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
                                         try {
-                                            LOG.info("正在执行回调函数，功能类型: " + functionType);
+                                            LOG.info("正在执行回调函数，Project: " + project.getName() + ", 功能类型: " + functionType);
                                             callback.accept(parsedContent);
                                             LOG.info("回调函数执行完成");
                                         } catch (Exception e) {
                                             LOG.error("执行回调函数时出错", e);
                                         }
                                     });
-                                } else {
-                                    LOG.warn("未找到功能类型 " + functionType + " 的回调函数，当前已注册回调key: " + topicCallbacks.keySet());
-                                    // 如果没有找到对应的回调，缓存消息
-                                    pendingMessages.offer(parsedContent);
+                                    messageHandled = true;
                                 }
                             }
+                            
+                            // 向后兼容：如果没有Project级别的回调，使用全局回调
+                            if (!messageHandled) {
+                                Consumer<String> callback = topicCallbacks.get(functionType);
+                                if (callback != null) {
+                                    LOG.info("使用全局回调，功能类型: " + functionType);
+                                    com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
+                                        try {
+                                            callback.accept(parsedContent);
+                                        } catch (Exception e) {
+                                            LOG.error("执行全局回调函数时出错", e);
+                                        }
+                                    });
+                                    messageHandled = true;
+                                }
+                            }
+                            
+                            if (!messageHandled) {
+                                LOG.warn("未找到功能类型 " + functionType + " 的回调函数");
+                                // 如果没有找到对应的回调，缓存消息
+                                pendingMessages.offer(parsedContent);
+                            }
+                        }
                         } else {
                             LOG.warn("无法解析消息内容");
                         }
@@ -229,34 +266,66 @@ public final class MQTTService {
     }
 
     /**
-     * 设置特定功能类型的消息回调函数
+     * 设置特定功能类型的消息回调函数（Project级别）
+     * @param functionType 功能类型 (FUNCTION_CODE_GENERATION 或 FUNCTION_CODE_REVIEW)
+     * @param callback 回调函数
+     * @param project 项目实例
+     */
+    public void setMessageCallback(String functionType, Consumer<String> callback, Project project) {
+        synchronized (messageLock) {
+            projectCallbacks.computeIfAbsent(project, p -> new ConcurrentHashMap<>())
+                           .put(functionType, callback);
+
+            // 如果有缓存的消息，立即处理
+            if (callback != null && !pendingMessages.isEmpty()) {
+                LOG.info("Project级别回调函数已设置，处理 " + pendingMessages.size() + " 条缓存消息");
+                List<String> messages = new ArrayList<>(pendingMessages);
+                pendingMessages.clear();
+
+                // 在EDT线程中处理所有缓存消息
+                com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
+                    for (String cachedMessage : messages) {
+                        try {
+                            LOG.info("处理缓存消息: " + cachedMessage);
+                            callback.accept(cachedMessage);
+                        } catch (Exception e) {
+                            LOG.error("处理缓存消息时出错", e);
+                        }
+                    }
+                });
+            }
+        }
+    }
+
+    /**
+     * 设置特定功能类型的消息回调函数（向后兼容）
      * @param functionType 功能类型 (FUNCTION_CODE_GENERATION 或 FUNCTION_CODE_REVIEW)
      * @param callback 回调函数
      */
-            public void setMessageCallback(String functionType, Consumer<String> callback) {
-                synchronized (messageLock) {
-                    topicCallbacks.put(functionType, callback);
+    public void setMessageCallback(String functionType, Consumer<String> callback) {
+        synchronized (messageLock) {
+            topicCallbacks.put(functionType, callback);
 
-                    // 如果有缓存的消息，立即处理
-                    if (callback != null && !pendingMessages.isEmpty()) {
-                        LOG.info("回调函数已设置，处理 " + pendingMessages.size() + " 条缓存消息");
-                        List<String> messages = new ArrayList<>(pendingMessages);
-                        pendingMessages.clear();
+            // 如果有缓存的消息，立即处理
+            if (callback != null && !pendingMessages.isEmpty()) {
+                LOG.info("全局回调函数已设置，处理 " + pendingMessages.size() + " 条缓存消息");
+                List<String> messages = new ArrayList<>(pendingMessages);
+                pendingMessages.clear();
 
-                        // 在EDT线程中处理所有缓存消息
-                        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
-                            for (String cachedMessage : messages) {
-                                try {
-                                    LOG.info("处理缓存消息: " + cachedMessage);
-                                    callback.accept(cachedMessage);
-                                } catch (Exception e) {
-                                    LOG.error("处理缓存消息时出错", e);
-                                }
-                            }
-                        });
+                // 在EDT线程中处理所有缓存消息
+                com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
+                    for (String cachedMessage : messages) {
+                        try {
+                            LOG.info("处理缓存消息: " + cachedMessage);
+                            callback.accept(cachedMessage);
+                        } catch (Exception e) {
+                            LOG.error("处理缓存消息时出错", e);
+                        }
                     }
-                }
+                });
             }
+        }
+    }
 
     /**
      * 设置代码生成消息回调函数（向后兼容）

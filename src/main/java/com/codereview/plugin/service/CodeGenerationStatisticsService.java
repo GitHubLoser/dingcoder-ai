@@ -2,6 +2,8 @@ package com.codereview.plugin.service;
 
 import com.codereview.plugin.auth.AuthService;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.project.Project;
+import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.http.*;
 import org.springframework.web.client.RestTemplate;
 import java.util.HashMap;
@@ -16,8 +18,19 @@ public class CodeGenerationStatisticsService {
 
     private static final String API_URL = "https://igws-atotr-test.apps.digiwincloud.com.cn/restful/standard/iais/esp/executeEspRequest";
     private final AuthService authService = AuthService.getInstance();
-    private static final CodeGenerationStatisticsService INSTANCE = new CodeGenerationStatisticsService();
-    public static CodeGenerationStatisticsService getInstance() { return INSTANCE; }
+    private static final Map<Project, CodeGenerationStatisticsService> projectInstances = new ConcurrentHashMap<>();
+    
+    public static CodeGenerationStatisticsService getInstance(Project project) {
+        return projectInstances.computeIfAbsent(project, p -> new CodeGenerationStatisticsService());
+    }
+    
+    public static CodeGenerationStatisticsService getInstance() {
+        // 向后兼容，返回第一个可用的实例
+        if (!projectInstances.isEmpty()) {
+            return projectInstances.values().iterator().next();
+        }
+        return new CodeGenerationStatisticsService();
+    }
 
     public void sendStatistics(String codeId, String userName, String className, String type, String feedbackType, String feedbackContent) {
         try {
