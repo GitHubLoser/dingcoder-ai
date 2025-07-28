@@ -1378,7 +1378,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         
         // 如果有差异文件，显示差异对话框
         if (!diffInfos.isEmpty()) {
-            Boolean[] resolutionResults = com.codereview.plugin.ui.FileDiffDialog.showMultipleFileDiff(project, diffInfos);
+            com.codereview.plugin.ui.FileDiffDialog.ResolutionResult[] resolutionResults = com.codereview.plugin.ui.FileDiffDialog.showMultipleFileDiff(project, diffInfos);
             if (resolutionResults == null) {
                 // 用户取消
                 return;
@@ -1387,9 +1387,9 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             // 根据用户选择处理文件
             for (int i = 0; i < diffInfos.size(); i++) {
                 FileDiffService.FileDiffInfo diffInfo = diffInfos.get(i);
-                Boolean resolution = resolutionResults[i];
+                com.codereview.plugin.ui.FileDiffDialog.ResolutionResult resolution = resolutionResults[i];
                 
-                if (resolution == null) {
+                if (resolution.getType() == com.codereview.plugin.ui.FileDiffDialog.ResolutionType.SKIP) {
                     // 跳过此文件
                     continue;
                 }
@@ -1398,12 +1398,28 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                 int messageIndex = classNames.indexOf(diffInfo.getFileName().replace(".java", ""));
                 if (messageIndex >= 0) {
                     ChatMessage message = messagesToGenerate.get(messageIndex);
-                    if (resolution) {
-                        // 覆盖文件
-                        generateFileWithDiffHandling(message, targetDir, true);
-                    } else {
-                        // 保留现有文件，但标记为已生成
-                        message.setGenerated(true);
+                    
+                    // 根据用户选择处理文件
+                    switch (resolution.getType()) {
+                        case ORIGINAL:
+                            // 保留现有文件，但标记为已生成
+                            message.setGenerated(true);
+                            break;
+                        case NEW:
+                        case MERGED:
+                            // 使用新内容或合并内容生成文件
+                            String finalContent = resolution.getContent();
+                            if (finalContent != null && !finalContent.trim().isEmpty()) {
+                                // 临时修改消息内容为最终内容
+                                String originalContent = message.getContent();
+                                // 这里需要修改消息内容，但由于ChatMessage的content是final的，我们需要其他方式
+                                // 暂时使用generateFileWithDiffHandling，但传入最终内容
+                                generateFileWithCustomContent(message, finalContent, targetDir);
+                            } else {
+                                // 如果内容为空，标记为已生成但不实际生成文件
+                                message.setGenerated(true);
+                            }
+                            break;
                     }
                 }
             }
@@ -1425,6 +1441,54 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             "批量生成结果",
             JOptionPane.INFORMATION_MESSAGE
         );
+    }
+
+    /**
+     * 使用自定义内容生成文件
+     */
+    private void generateFileWithCustomContent(ChatMessage message, String customContent, VirtualFile targetDir) {
+        if (isJavaCode(customContent)) {
+            if (CodeGenerationService.getInstance(project).generateJavaFile(customContent, true, false, targetDir)) {
+                message.setGenerated(true);
+                
+                // 记录代码生成统计
+                String className = extractClassName(customContent);
+                recordCodeGenerationEvent(customContent, className, true);
+                
+                // 写入msgMapping到多语言文件
+                try {
+                    LOG.info("[多语言][DEBUG] 批量生成文件: message hashCode=" + System.identityHashCode(message) + ", msgMapping=" + message.getMsgMapping() + ", ref=" + System.identityHashCode(message.getMsgMapping()));
+                    Map<String, String> mappingMap = message.getMsgMapping();
+                    LOG.info("[多语言] 批量生成当前msgMapping Map内容: " + mappingMap);
+                    if (mappingMap != null && !mappingMap.isEmpty()) {
+                        for (Map.Entry<String, String> entry : mappingMap.entrySet()) {
+                            String key = entry.getKey();
+                            String value = entry.getValue();
+                            LOG.info("[多语言] 批量生成写入前 key=" + key + ", value=" + value);
+                            com.codereview.plugin.service.GenerateMessageMappingService.writeUnicodeProperties(project, key, value);
+                            LOG.info("[多语言] 批量生成写入完成");
+                        }
+                        // 写入完成后再清空msgMapping
+                        com.codereview.plugin.service.MQTTService.getInstance().clearCodeGenerationMsgMapping();
+                    } else {
+                        LOG.info("[多语言] 批量生成未检测到msgMapping内容，无需写入");
+                    }
+                } catch (Exception ex) {
+                    LOG.error("[多语言] 批量生成写入多语言文件失败", ex);
+                }
+                
+                // 发送统计接口 type=0
+                LOG.info("[统计] 批量生成即将上报 codeId=" + (message.getUuid()) + ", userName=" + com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser() + ", className=" + className + ", type=0");
+                com.codereview.plugin.service.CodeGenerationStatisticsService.getInstance().sendStatistics(
+                    message.getUuid(),
+                    com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser(),
+                    className,
+                    "0",
+                    null,
+                    null
+                );
+            }
+        }
     }
 
     /**
