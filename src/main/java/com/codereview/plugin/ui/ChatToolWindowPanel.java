@@ -1433,7 +1433,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     private void generateFileWithDiffHandling(ChatMessage message, VirtualFile targetDir, boolean forceOverwrite) {
         String content = message.getContent();
         if (isJavaCode(content)) {
-            if (CodeGenerationService.getInstance(project).generateJavaFile(content, false, targetDir)) {
+            if (CodeGenerationService.getInstance(project).generateJavaFile(content, true, targetDir)) {
                 message.setGenerated(true);
                 
                 // 记录代码生成统计
