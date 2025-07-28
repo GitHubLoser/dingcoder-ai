@@ -32,9 +32,6 @@ public class GenerateMessageMappingService {
                 }
             }
         }
-//        for (String p : triedPaths) {
-//            LOG.info("实际message-application_zh_CN.properties的查找路径：" + p);
-//        }
         throw new RuntimeException("未找到 message-application_zh_CN.properties 文件");
     }
 
@@ -51,13 +48,24 @@ public class GenerateMessageMappingService {
             return;
         }
         String path = findPropertiesFilePath(project);
-        NoTimestampProperties prop = new NoTimestampProperties();
-        try (OutputStream output = new FileOutputStream(path, true);
-             java.io.OutputStreamWriter writer = new java.io.OutputStreamWriter(output, java.nio.charset.StandardCharsets.UTF_8)) {
-            prop.setProperty(key, chineseValue);
-            prop.store(writer, null); // 去掉注释（时间戳）
+        
+        // 直接追加新内容，不使用Properties.store()方法
+        try (java.io.OutputStreamWriter writer = new java.io.OutputStreamWriter(
+                new java.io.FileOutputStream(path, true), java.nio.charset.StandardCharsets.UTF_8)) {
+            // 直接写入键值对，不添加时间戳
+            writer.write(escape(key) + "=" + escape(chineseValue) + "\n");
         }
     }
+
+    /**
+     * 转义字符串，处理特殊字符
+     */
+    private static String escape(String str) {
+        return str.replace("\\", "\\\\")
+                .replace("\n", "\\n")
+                .replace("\t", "\\t");
+    }
+
 
     /**
      * 自动将中文转换为Unicode格式
@@ -94,3 +102,4 @@ public class GenerateMessageMappingService {
     }
 
 }
+
