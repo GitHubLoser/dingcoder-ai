@@ -175,14 +175,20 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         gbc.gridx = 0;
         gbc.gridy = 0;
         gbc.insets = new Insets(8, 0, 16, 0);
+        gbc.anchor = GridBagConstraints.CENTER;
+        gbc.fill = GridBagConstraints.NONE;
         centerPanel.add(svgLabel, gbc);
 
         gbc.gridy = 1;
         gbc.insets = new Insets(0, 0, 24, 0);
+        gbc.anchor = GridBagConstraints.CENTER;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
         centerPanel.add(descLabel, gbc);
 
         gbc.gridy = 2;
         gbc.insets = new Insets(0, 0, 0, 0);
+        gbc.anchor = GridBagConstraints.CENTER;
+        gbc.fill = GridBagConstraints.NONE;
         centerPanel.add(bigLoginButton, gbc);
 
         welcomePanel.add(centerPanel, BorderLayout.CENTER);
