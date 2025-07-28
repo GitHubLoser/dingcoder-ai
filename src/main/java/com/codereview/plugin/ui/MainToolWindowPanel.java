@@ -183,6 +183,23 @@ public class MainToolWindowPanel extends JBPanel<MainToolWindowPanel> {
         loginBtn.addActionListener(this::onLoginButtonClick);
         centerPanel.add(loginBtn);
         
+        centerPanel.add(Box.createVerticalStrut(15));
+        
+        // 登录状态作用范围提示
+        JBLabel scopeLabel = new JBLabel("💡 登录状态仅在当前IDEA进程内有效");
+        scopeLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 13));
+        scopeLabel.setForeground(new Color(102, 102, 102));
+        scopeLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        centerPanel.add(scopeLabel);
+        
+        centerPanel.add(Box.createVerticalStrut(2));
+        
+        JBLabel scopeLabel2 = new JBLabel("新开IDEA窗口需要重新登录");
+        scopeLabel2.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 13));
+        scopeLabel2.setForeground(new Color(102, 102, 102));
+        scopeLabel2.setAlignmentX(Component.CENTER_ALIGNMENT);
+        centerPanel.add(scopeLabel2);
+        
         loginPromptPanel.add(centerPanel, BorderLayout.CENTER);
     }
     
