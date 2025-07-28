@@ -536,12 +536,13 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     }
 
     private void updateChatDisplay() {
-        // 清空聊天面板
+        // 清空聊天面板和映射关系
         chatPanel.removeAll();
+        messagePanelMap.clear();
 
         // 重新添加所有消息
         for (ChatMessage message : chatMessages) {
-            chatPanel.add(createMessagePanel(message));
+            chatPanel.add(createMessagePanelWithMapping(message));
         }
 
         // 刷新UI
@@ -761,7 +762,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                 );
                 message.setLiked(true);
                 message.setDisliked(false);
-                updateChatDisplay();
+                updateLikeDislikeButtonState(message);
             });
             
             // 点踩按钮
@@ -792,7 +793,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                 );
                 message.setDisliked(true);
                 message.setLiked(false);
-                updateChatDisplay();
+                updateLikeDislikeButtonState(message);
             });
 
             rightPanel.add(generateButton);
@@ -995,6 +996,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         for (Component component : components) {
             if (component instanceof JPanel && component.getName() != null && component.getName().equals("batchGeneratePanel")) {
                 chatPanel.remove(component);
+                break; // 找到并移除一个就够了
             }
         }
 
@@ -1455,8 +1457,9 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                 }
             }
 
-            // 清空消息列表
+            // 清空消息列表和映射关系
             chatMessages.clear();
+            messagePanelMap.clear();
 
             // 清空UI组件
             if (chatPanel != null) {
@@ -1727,6 +1730,80 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         } catch (Exception e) {
             LOG.warn("计算哈希值失败", e);
             return String.valueOf(content.hashCode());
+        }
+    }
+
+    // 存储消息面板的映射关系，用于快速定位和更新
+    private final Map<String, JPanel> messagePanelMap = new HashMap<>();
+    
+    /**
+     * 创建消息面板并建立映射关系
+     */
+    private JPanel createMessagePanelWithMapping(ChatMessage message) {
+        JPanel panel = createMessagePanel(message);
+        messagePanelMap.put(message.getUuid(), panel);
+        return panel;
+    }
+    
+    /**
+     * 只更新特定消息的点赞/点踩按钮状态
+     */
+    private void updateLikeDislikeButtonState(ChatMessage targetMessage) {
+        JPanel messagePanel = messagePanelMap.get(targetMessage.getUuid());
+        if (messagePanel == null) {
+            return;
+        }
+        
+        // 查找并更新点赞和点踩按钮
+        updateButtonsInMessagePanel(messagePanel, targetMessage);
+    }
+    
+    /**
+     * 在消息面板中查找并更新按钮状态
+     */
+    private void updateButtonsInMessagePanel(JPanel messagePanel, ChatMessage message) {
+        // 递归查找所有按钮
+        findAndUpdateButtons(messagePanel, message);
+    }
+    
+    /**
+     * 递归查找按钮并更新状态
+     */
+    private void findAndUpdateButtons(Container container, ChatMessage message) {
+        for (Component comp : container.getComponents()) {
+            if (comp instanceof JButton) {
+                JButton button = (JButton) comp;
+                updateButtonState(button, message);
+            } else if (comp instanceof Container) {
+                findAndUpdateButtons((Container) comp, message);
+            }
+        }
+    }
+    
+    /**
+     * 更新单个按钮状态
+     */
+    private void updateButtonState(JButton button, ChatMessage message) {
+        String buttonText = button.getText();
+        
+        if (buttonText.contains("👍") || buttonText.contains("已点赞")) {
+            // 点赞按钮
+            if (message.isLiked()) {
+                button.setText("已点赞");
+                button.setEnabled(false);
+            } else {
+                button.setText("👍");
+                button.setEnabled(true);
+            }
+        } else if (buttonText.contains("👎") || buttonText.contains("已点踩")) {
+            // 点踩按钮
+            if (message.isDisliked()) {
+                button.setText("已点踩");
+                button.setEnabled(false);
+            } else {
+                button.setText("👎");
+                button.setEnabled(true);
+            }
         }
     }
 } 
