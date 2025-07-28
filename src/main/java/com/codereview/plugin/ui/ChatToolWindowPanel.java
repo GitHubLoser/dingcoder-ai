@@ -410,6 +410,9 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             return; // 路径检查失败，不继续执行
         }
         
+        // 隐藏批量按钮（开始新的对话周期）
+        removeBatchGenerateButton();
+        
         addUserMessage(input);
         inputField.setText("");
         isWaitingForGeneration = true;
@@ -551,6 +554,16 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     }
 
     private void updateChatDisplay() {
+        // 保存批量按钮面板
+        JPanel batchGeneratePanel = null;
+        Component[] components = chatPanel.getComponents();
+        for (Component component : components) {
+            if (component instanceof JPanel && component.getName() != null && component.getName().equals("batchGeneratePanel")) {
+                batchGeneratePanel = (JPanel) component;
+                break;
+            }
+        }
+        
         // 清空聊天面板和映射关系
         chatPanel.removeAll();
         messagePanelMap.clear();
@@ -559,6 +572,12 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         for (ChatMessage message : chatMessages) {
             chatPanel.add(createMessagePanelWithMapping(message));
         }
+        
+        // 重新添加批量按钮面板（只有在之前存在时才添加）
+        if (batchGeneratePanel != null) {
+            chatPanel.add(batchGeneratePanel);
+        }
+        // 移除自动重新创建批量按钮的逻辑
 
         // 刷新UI
         chatPanel.revalidate();
@@ -1007,6 +1026,21 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         popup.show(editor.getComponent(), e.getX(), e.getY());
     }
 
+    /**
+     * 移除批量生成按钮
+     */
+    private void removeBatchGenerateButton() {
+        Component[] components = chatPanel.getComponents();
+        for (Component component : components) {
+            if (component instanceof JPanel && component.getName() != null && component.getName().equals("batchGeneratePanel")) {
+                chatPanel.remove(component);
+                chatPanel.revalidate();
+                chatPanel.repaint();
+                break;
+            }
+        }
+    }
+
     private void addBatchGenerateButton() {
         // 先移除已存在的批量生成按钮（如果有的话）
         Component[] components = chatPanel.getComponents();
@@ -1255,8 +1289,10 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
 
                     if (hasJavaCode) {
                         addBatchGenerateButton();
+                        updateBatchButtonStates();
                     }
                 }
+                // 移除其他消息的批量按钮显示逻辑
 
                 LOG.info("消息处理完成");
             } catch (Exception e) {
