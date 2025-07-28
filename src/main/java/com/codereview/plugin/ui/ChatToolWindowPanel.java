@@ -333,13 +333,13 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         JButton bigLoginButton = (JButton) welcomePanel.getClientProperty("bigLoginButton");
 
         if (isLoggedIn) {
-            descLabel.setText("<html>🎉 欢迎使用鼎码智辅！<br/>" +
-                    "我是你的AI编码助手，可以帮你快速生成校验器代码<br/>" +
-                    "💡 使用方法很简单：<br/>" +
-                    "在输入框中输入API名称或校验器名称即可<br/>" +
-                    "多个校验器用逗号分隔，例如：<br/>" +
-                    "<code>bm.pre_item.create:VD_pre_item_00012,VD_pre_item_00015</code><br/>" +
-                    "🚀 现在就开始你的AI编程之旅吧！" +
+            descLabel.setText("<html>🎉 欢迎使用鼎码智辅！我是你的AI编码助手<br/>" +
+//                    "可以帮你快速生成校验器代码<br/>" +
+//                    "💡 使用方法很简单：<br/>" +
+//                    "在输入框中输入API名称或校验器名称即可<br/>" +
+//                    "多个校验器用逗号分隔，例如：<br/>" +
+//                    "<code>bm.pre_item.create:VD_pre_item_00012,VD_pre_item_00015</code><br/>" +
+//                    "🚀 现在就开始你的AI编程之旅吧！" +
                     "</html>");
             bigLoginButton.setVisible(false);
 
