@@ -1311,6 +1311,28 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                     if (CodeGenerationService.getInstance(project).generateJavaFile(content, false, targetDir)) {
                         successCount[0]++;
                         message.setGenerated(true);
+                        
+                        // 写入msgMapping到多语言文件
+                        try {
+                            LOG.info("[多语言][DEBUG] 批量生成文件: message hashCode=" + System.identityHashCode(message) + ", msgMapping=" + message.getMsgMapping() + ", ref=" + System.identityHashCode(message.getMsgMapping()));
+                            Map<String, String> mappingMap = message.getMsgMapping();
+                            LOG.info("[多语言] 批量生成当前msgMapping Map内容: " + mappingMap);
+                            if (mappingMap != null && !mappingMap.isEmpty()) {
+                                for (Map.Entry<String, String> entry : mappingMap.entrySet()) {
+                                    String key = entry.getKey();
+                                    String value = entry.getValue();
+                                    LOG.info("[多语言] 批量生成写入前 key=" + key + ", value=" + value);
+                                    com.codereview.plugin.service.GenerateMessageMappingService.writeUnicodeProperties(project, key, value);
+                                    LOG.info("[多语言] 批量生成写入完成");
+                                }
+                                // 写入完成后再清空msgMapping
+                                com.codereview.plugin.service.MQTTService.getInstance().clearCodeGenerationMsgMapping();
+                            } else {
+                                LOG.info("[多语言] 批量生成未检测到msgMapping内容，无需写入");
+                            }
+                        } catch (Exception ex) {
+                            LOG.error("[多语言] 批量生成写入多语言文件失败", ex);
+                        }
                     } else {
                         failCount[0]++;
                     }
