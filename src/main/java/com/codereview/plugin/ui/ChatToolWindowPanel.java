@@ -1312,6 +1312,10 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                         successCount[0]++;
                         message.setGenerated(true);
                         
+                        // 记录代码生成统计
+                        String className = extractClassName(content);
+                        recordCodeGenerationEvent(content, className, true);
+                        
                         // 写入msgMapping到多语言文件
                         try {
                             LOG.info("[多语言][DEBUG] 批量生成文件: message hashCode=" + System.identityHashCode(message) + ", msgMapping=" + message.getMsgMapping() + ", ref=" + System.identityHashCode(message.getMsgMapping()));
@@ -1333,6 +1337,18 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                         } catch (Exception ex) {
                             LOG.error("[多语言] 批量生成写入多语言文件失败", ex);
                         }
+                        
+                        // 发送统计接口 type=0
+                        LOG.info("[统计] 批量生成即将上报 codeId=" + (message.getUuid()) + ", userName=" + com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser() + ", className=" + className + ", type=0");
+                        com.codereview.plugin.service.CodeGenerationStatisticsService.getInstance().sendStatistics(
+                            message.getUuid(),
+                            com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser(),
+                            className,
+                            "0",
+                            null,
+                            null
+                        );
+                        LOG.info("[统计] 批量生成sendStatistics已调用完成（type=0）");
                     } else {
                         failCount[0]++;
                     }
