@@ -94,6 +94,8 @@ public final class CodeGenerationService {
         }
         
         try {
+            // 注释掉差异比对功能 - 开始
+            /*
             // 检查文件差异
             FileDiffService fileDiffService = FileDiffService.getInstance(project);
             if (fileDiffService != null) {
@@ -109,6 +111,8 @@ public final class CodeGenerationService {
             } else {
                 LOG.warn("FileDiffService实例创建失败，跳过差异检测");
             }
+            */
+            // 注释掉差异比对功能 - 结束
             
             // 在写命令中执行文件创建
             boolean[] success = {false};

@@ -1366,6 +1366,8 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             return;
         }
 
+        // 注释掉差异比对功能 - 开始
+        /*
         // 检查文件差异
         FileDiffService fileDiffService = FileDiffService.getInstance(project);
         List<FileDiffService.FileDiffInfo> diffInfos = new ArrayList<>();
@@ -1428,6 +1430,13 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             for (ChatMessage message : messagesToGenerate) {
                 generateFileWithDiffHandling(message, targetDir, false);
             }
+        }
+        */
+        // 注释掉差异比对功能 - 结束
+        
+        // 直接生成所有文件（跳过差异比对）
+        for (ChatMessage message : messagesToGenerate) {
+            generateFileWithDiffHandling(message, targetDir, false);
         }
 
         // 刷新UI
