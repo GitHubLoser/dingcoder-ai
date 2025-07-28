@@ -763,6 +763,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                 message.setLiked(true);
                 message.setDisliked(false);
                 updateLikeDislikeButtonState(message);
+                updateBatchButtonStates();
             });
             
             // 点踩按钮
@@ -794,6 +795,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                 message.setDisliked(true);
                 message.setLiked(false);
                 updateLikeDislikeButtonState(message);
+                updateBatchButtonStates();
             });
 
             rightPanel.add(generateButton);
@@ -1062,6 +1064,11 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             int count = 0;
             for (ChatMessage message : chatMessages) {
                 if (!message.isUser() && isJavaCode(message.getContent())) {
+                    // 更新消息状态
+                    message.setLiked(true);
+                    message.setDisliked(false);
+                    
+                    // 记录反馈和统计
                     recordUserFeedbackEvent(message.getContent(), "LIKE", feedback);
                     com.codereview.plugin.service.CodeGenerationStatisticsService.getInstance().sendStatistics(
                         message.getUuid(),
@@ -1071,9 +1078,14 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                         "LIKE",
                         feedback
                     );
+                    
+                    // 更新UI按钮状态
+                    updateLikeDislikeButtonState(message);
                     count++;
                 }
             }
+            // 更新批量按钮状态
+            updateBatchButtonStates();
             JOptionPane.showMessageDialog(this, "批量点赞完成，共点赞 " + count + " 条消息", "提示", JOptionPane.INFORMATION_MESSAGE);
         });
 
@@ -1103,6 +1115,11 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             int count = 0;
             for (ChatMessage message : chatMessages) {
                 if (!message.isUser() && isJavaCode(message.getContent())) {
+                    // 更新消息状态
+                    message.setDisliked(true);
+                    message.setLiked(false);
+                    
+                    // 记录反馈和统计
                     recordUserFeedbackEvent(message.getContent(), "DISLIKE", feedback);
                     com.codereview.plugin.service.CodeGenerationStatisticsService.getInstance().sendStatistics(
                         message.getUuid(),
@@ -1112,9 +1129,14 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                         "DISLIKE",
                         feedback
                     );
+                    
+                    // 更新UI按钮状态
+                    updateLikeDislikeButtonState(message);
                     count++;
                 }
             }
+            // 更新批量按钮状态
+            updateBatchButtonStates();
             JOptionPane.showMessageDialog(this, "批量点踩完成，共点踩 " + count + " 条消息", "提示", JOptionPane.INFORMATION_MESSAGE);
         });
 
@@ -1127,6 +1149,9 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         chatPanel.add(batchGeneratePanel);
         chatPanel.revalidate();
         chatPanel.repaint();
+
+        // 设置初始批量按钮状态
+        updateBatchButtonStates();
 
         // 滚动到底部
         SwingUtilities.invokeLater(() -> {
@@ -1295,6 +1320,59 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
 
         // 刷新UI
         updateChatDisplay();
+    }
+
+    /**
+     * 更新批量按钮状态
+     */
+    private void updateBatchButtonStates() {
+        // 查找批量按钮面板
+        Component[] components = chatPanel.getComponents();
+        JButton batchLikeButton = null;
+        JButton batchDislikeButton = null;
+        
+        for (Component component : components) {
+            if (component instanceof JPanel && component.getName() != null && component.getName().equals("batchGeneratePanel")) {
+                JPanel batchPanel = (JPanel) component;
+                for (Component comp : batchPanel.getComponents()) {
+                    if (comp instanceof JButton) {
+                        JButton button = (JButton) comp;
+                        if (button.getText().equals("批量点赞")) {
+                            batchLikeButton = button;
+                        } else if (button.getText().equals("批量点踩")) {
+                            batchDislikeButton = button;
+                        }
+                    }
+                }
+                break;
+            }
+        }
+        
+        if (batchLikeButton == null || batchDislikeButton == null) {
+            return; // 批量按钮不存在，可能是第一次添加
+        }
+        
+        // 检查是否有代码消息
+        boolean hasCodeMessages = chatMessages.stream()
+            .anyMatch(message -> !message.isUser() && isJavaCode(message.getContent()));
+        
+        if (!hasCodeMessages) {
+            batchLikeButton.setEnabled(false);
+            batchDislikeButton.setEnabled(false);
+            return;
+        }
+        
+        // 检查是否有未点赞的代码消息（如果有，则启用批量点赞按钮）
+        boolean hasUnlikedCodeMessage = chatMessages.stream()
+            .anyMatch(message -> !message.isUser() && isJavaCode(message.getContent()) && !message.isLiked());
+        
+        // 检查是否有未点踩的代码消息（如果有，则启用批量点踩按钮）
+        boolean hasUndislikedCodeMessage = chatMessages.stream()
+            .anyMatch(message -> !message.isUser() && isJavaCode(message.getContent()) && !message.isDisliked());
+        
+        // 更新批量按钮状态
+        batchLikeButton.setEnabled(hasUnlikedCodeMessage);
+        batchDislikeButton.setEnabled(hasUndislikedCodeMessage);
     }
 
     // 内部类：聊天消息
