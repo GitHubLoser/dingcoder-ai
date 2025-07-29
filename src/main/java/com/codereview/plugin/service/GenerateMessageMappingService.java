@@ -49,11 +49,27 @@ public class GenerateMessageMappingService {
         }
         String path = findPropertiesFilePath(project);
         
+        // 检查文件是否以换行符结尾，如果不是则先添加换行符
+        java.io.File file = new java.io.File(path);
+        boolean needNewline = true;
+        if (file.exists() && file.length() > 0) {
+            try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(file, "r")) {
+                raf.seek(file.length() - 1);
+                int lastChar = raf.read();
+                needNewline = (lastChar != '\n');
+            }
+        }
+        
         // 直接追加新内容，不使用Properties.store()方法
         try (java.io.OutputStreamWriter writer = new java.io.OutputStreamWriter(
                 new java.io.FileOutputStream(path, true), java.nio.charset.StandardCharsets.UTF_8)) {
-            // 直接写入键值对，不添加时间戳
+            // 如果文件不以换行符结尾，先添加一个换行符
+            if (needNewline) {
+                writer.write("\n");
+            }
+            // 确保每次写入都有换行符，避免多个key-value对写在同一行
             writer.write(escape(key) + "=" + escape(chineseValue) + "\n");
+            writer.flush(); // 确保立即写入磁盘
         }
     }
 
@@ -64,24 +80,6 @@ public class GenerateMessageMappingService {
         return str.replace("\\", "\\\\")
                 .replace("\n", "\\n")
                 .replace("\t", "\\t");
-    }
-
-
-    /**
-     * 自动将中文转换为Unicode格式
-     * @param str
-     * @return
-     */
-    private static String convertToUnicode(String str) {
-        StringBuilder sb = new StringBuilder();
-        for (char c : str.toCharArray()) {
-            if (c > 127) {
-                sb.append("\\u").append(String.format("%04x", (int) c));
-            } else {
-                sb.append(c);
-            }
-        }
-        return sb.toString();
     }
 
 
