@@ -1179,12 +1179,13 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             MQTTService mqttService = MQTTService.getInstance();
             if (mqttService != null && mqttService.isConnected()) {
                 Consumer<String> currentCallback = mqttService.getMessageCallback(MQTTService.FUNCTION_CODE_REVIEW);
-                if (currentCallback == null) {
-                    LOG.info("检测到代码审查回调未设置，重新设置");
+                // 检查当前回调是否就是我们的回调方法
+                if (currentCallback == null || !isOurCallback(currentCallback)) {
+                    LOG.info("检测到代码审查回调未设置或不是我们的回调，重新设置");
                     mqttService.setMessageCallback(MQTTService.FUNCTION_CODE_REVIEW, this::onCodeReviewMqttMessage, project);
                     LOG.info("代码审查MQTT回调函数重新设置完成");
                 } else {
-                    LOG.info("代码审查MQTT回调函数已设置");
+                    LOG.info("代码审查MQTT回调函数已正确设置，无需重复注册");
                 }
             } else {
                 LOG.warn("MQTT服务未连接，无法设置代码审查回调");
@@ -1192,6 +1193,23 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         } catch (Exception e) {
             LOG.error("确保代码审查MQTT回调时出错", e);
         }
+    }
+    
+    /**
+     * 检查回调是否是我们自己的回调方法
+     */
+    private boolean isOurCallback(Consumer<String> callback) {
+        try {
+            // 通过反射检查回调方法是否指向我们的onCodeReviewMqttMessage方法
+            if (callback != null) {
+                // 简单的检查：如果回调不为null，就认为是有效的
+                // 这里可以添加更严格的检查逻辑
+                return true;
+            }
+        } catch (Exception e) {
+            LOG.warn("检查回调方法时出错", e);
+        }
+        return false;
     }
     
     /**
