@@ -1312,15 +1312,17 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
 
     private void onMQTTMessage(String message) {
         LOG.info("收到MQTT消息回调: " + message);
+        
         // 检查是否有msgMapping（表示这是新格式的代码消息）
-        // 只保留Map逻辑，msgMapping字符串已废弃
         Map<String, String> mappingMap = mqttService.getCodeGenerationMsgMappingMap();
-        if (mappingMap != null && !mappingMap.isEmpty()) {
-            LOG.info("检测到msgMapping，这是新格式代码消息: " + mappingMap);
-            // 不再清空msgMapping
+        final Map<String, String> msgMappingCopy = (mappingMap != null && !mappingMap.isEmpty()) ? 
+            new HashMap<>(mappingMap) : null;
+        
+        if (msgMappingCopy != null) {
+            LOG.info("检测到msgMapping，这是新格式代码消息: " + msgMappingCopy);
         }
-
-        // 如果是超时消息，重置状态
+        
+        // 如果是超时消息，单独处理
         if ("操作超时，请重试".equals(message)) {
             SwingUtilities.invokeLater(() -> {
                 if (waitingTimer != null && waitingTimer.isRunning()) waitingTimer.stop();
@@ -1330,7 +1332,8 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             });
             return;
         }
-
+        
+        // 统一的消息处理逻辑
         SwingUtilities.invokeLater(() -> {
             try {
                 if (waitingTimer != null && waitingTimer.isRunning()) waitingTimer.stop();
@@ -1349,8 +1352,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                     chatScrollPane.setViewportView(chatPanel);
                 }
 
-                // 添加助手消息
-                LOG.info("开始添加助手消息");
+                // 处理消息内容
                 String displayMessage = message;
                 if ("所有代码均已生成".equals(message.trim())) {
                     // 随机趣味提示
@@ -1372,9 +1374,20 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                         // ignore
                     }
                 }
-                addAssistantMessage(displayMessage, false);
-                LOG.info("助手消息添加完成");
-
+                
+                // 根据是否有msgMapping创建不同的ChatMessage
+                if (msgMappingCopy != null) {
+                    LOG.info("开始添加助手消息，使用保存的msgMapping: " + msgMappingCopy);
+                    ChatMessage chatMessage = new ChatMessage(displayMessage, false, msgMappingCopy, false);
+                    chatMessages.add(chatMessage);
+                    updateChatDisplay();
+                    LOG.info("助手消息添加完成，msgMapping已保存");
+                } else {
+                    LOG.info("开始添加助手消息");
+                    addAssistantMessage(displayMessage, false);
+                    LOG.info("助手消息添加完成");
+                }
+                
                 // 检查是否是"所有代码均已生成"消息
                 if ("所有代码均已生成".equals(message.trim())) {
                     LOG.info("收到代码生成完成消息，恢复发送按钮状态");
@@ -1393,8 +1406,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                         updateBatchButtonStates();
                     }
                 }
-                // 移除其他消息的批量按钮显示逻辑
-
+                
                 LOG.info("消息处理完成");
             } catch (Exception e) {
                 LOG.error("处理MQTT消息时出错", e);
@@ -1553,53 +1565,6 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         );
     }
 
-    /**
-     * 使用自定义内容生成文件
-     */
-    private void generateFileWithCustomContent(ChatMessage message, String customContent, VirtualFile targetDir) {
-        if (isJavaCode(customContent)) {
-            if (CodeGenerationService.getInstance(project).generateJavaFile(customContent, true, false, targetDir)) {
-                message.setGenerated(true);
-                
-                // 记录代码生成统计
-                String className = extractClassName(customContent);
-                recordCodeGenerationEvent(customContent, className, true);
-                
-                // 写入msgMapping到多语言文件
-                try {
-                    LOG.info("[多语言][DEBUG] 批量生成文件: message hashCode=" + System.identityHashCode(message) + ", msgMapping=" + message.getMsgMapping() + ", ref=" + System.identityHashCode(message.getMsgMapping()));
-                    Map<String, String> mappingMap = message.getMsgMapping();
-                    LOG.info("[多语言] 批量生成当前msgMapping Map内容: " + mappingMap);
-                    if (mappingMap != null && !mappingMap.isEmpty()) {
-                        for (Map.Entry<String, String> entry : mappingMap.entrySet()) {
-                            String key = entry.getKey();
-                            String value = entry.getValue();
-                            LOG.info("[多语言] 批量生成写入前 key=" + key + ", value=" + value);
-                            com.codereview.plugin.service.GenerateMessageMappingService.writeUnicodeProperties(project, key, value);
-                            LOG.info("[多语言] 批量生成写入完成");
-                        }
-                        // 写入完成后再清空msgMapping
-                        com.codereview.plugin.service.MQTTService.getInstance().clearCodeGenerationMsgMapping();
-                    } else {
-                        LOG.info("[多语言] 批量生成未检测到msgMapping内容，无需写入");
-                    }
-                } catch (Exception ex) {
-                    LOG.error("[多语言] 批量生成写入多语言文件失败", ex);
-                }
-                
-                // 发送统计接口 type=0
-                LOG.info("[统计] 批量生成即将上报 codeId=" + (message.getUuid()) + ", userName=" + com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser() + ", className=" + className + ", type=0");
-                com.codereview.plugin.service.CodeGenerationStatisticsService.getInstance().sendStatistics(
-                    message.getUuid(),
-                    com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser(),
-                    className,
-                    "0",
-                    null,
-                    null
-                );
-            }
-        }
-    }
 
     /**
      * 生成文件并处理差异
