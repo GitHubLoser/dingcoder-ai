@@ -545,8 +545,22 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             if (!chatMessages.isEmpty()) {
                 ChatMessage last = chatMessages.get(chatMessages.size() - 1);
                 if (!last.isUser()) {
-                    chatMessages.set(chatMessages.size() - 1, new ChatMessage(sb.toString(), false, last.isWaitingTip()));
-                    updateChatDisplay();
+                    chatMessages.set(chatMessages.size() - 1, new ChatMessage(sb.toString(), false, last.getMsgMapping(), last.isWaitingTip()));
+                    // 只更新等待消息的显示，不重建整个UI
+                    SwingUtilities.invokeLater(() -> {
+                        try {
+                            // 找到最后一条消息对应的UI组件并更新其文本
+                            Component[] components = chatPanel.getComponents();
+                            if (components.length > 0) {
+                                // 获取最后一个消息组件
+                                Component lastComponent = components[components.length - 1];
+                                updateMessageText(lastComponent, sb.toString());
+                            }
+                        } catch (Exception ex) {
+                            // 如果更新失败，回退到完整的UI更新
+                            updateChatDisplay();
+                        }
+                    });
                 }
             }
         });
@@ -1336,13 +1350,16 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         // 统一的消息处理逻辑
         SwingUtilities.invokeLater(() -> {
             try {
-                if (waitingTimer != null && waitingTimer.isRunning()) waitingTimer.stop();
                 // 移除最后一条等待语
                 if (!chatMessages.isEmpty()) {
                     ChatMessage last = chatMessages.get(chatMessages.size() - 1);
                     if (!last.isUser() && last.isWaitingTip()) {
                         chatMessages.remove(chatMessages.size() - 1);
                         updateChatDisplay();
+                        // 等待消息被移除时，同时停止Timer
+                        if (waitingTimer != null && waitingTimer.isRunning()) {
+                            waitingTimer.stop();
+                        }
                     }
                 }
                 LOG.info("在EDT线程中处理消息...");
@@ -1414,6 +1431,10 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                 isWaitingForGeneration = false;
                 updateSendButtonForSend();
                 addAssistantMessage("消息处理出错，请重试");
+                // 停止等待动画
+                if (waitingTimer != null && waitingTimer.isRunning()) {
+                    waitingTimer.stop();
+                }
             }
         });
     }
@@ -2196,5 +2217,39 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         }
         
         return null;
+    }
+
+    /**
+     * 更新消息组件的文本内容，避免重建整个UI
+     */
+    private void updateMessageText(Component component, String newText) {
+        if (component instanceof JPanel) {
+            JPanel panel = (JPanel) component;
+            // 递归查找文本标签
+            updateTextInPanel(panel, newText);
+        }
+    }
+    
+    /**
+     * 递归查找并更新面板中的文本标签
+     */
+    private void updateTextInPanel(JPanel panel, String newText) {
+        for (Component child : panel.getComponents()) {
+            if (child instanceof JLabel) {
+                JLabel label = (JLabel) child;
+                // 更新标签文本，保持HTML格式
+                String currentText = label.getText();
+                if (currentText != null && currentText.contains("<html>")) {
+                    // 保持HTML格式，只更新文本内容
+                    String htmlText = currentText.replaceAll("<html>.*?</html>", "<html>" + newText.replace("\n", "<br>") + "</html>");
+                    label.setText(htmlText);
+                } else {
+                    label.setText(newText);
+                }
+                return; // 找到并更新后退出
+            } else if (child instanceof JPanel) {
+                updateTextInPanel((JPanel) child, newText);
+            }
+        }
     }
 } 
