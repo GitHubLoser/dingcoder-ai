@@ -19,7 +19,7 @@ public class GenerateMessageMappingService {
 
     public static String findPropertiesFilePath(Project project) {
         String userPath = project.getBasePath();
-//        LOG.info("当前项目根目录：" + userPath);
+        LOG.info("当前项目根目录：" + userPath);
         java.io.File userDir = new java.io.File(userPath);
         String relativePath = "develop/lang/message-application_zh_CN.properties";
         java.util.List<String> triedPaths = new java.util.ArrayList<>();
