@@ -1885,7 +1885,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             confirmButton.setContentAreaFilled(true);
             confirmButton.setBackground(new Color(76, 175, 80)); // Material Design Green
             confirmButton.setEnabled(true); // 确认按钮始终启用，在点击时检查状态
-            confirmButton.setForeground(Color.WHITE);
+            confirmButton.setForeground(JBColor.foreground());
             confirmButton.setOpaque(true);
             confirmButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             confirmButton.setToolTipText("确认评审意见");
@@ -1916,7 +1916,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             falsePositiveButton.setContentAreaFilled(true);
             falsePositiveButton.setBackground(new Color(255, 152, 0)); // Material Design Orange
             falsePositiveButton.setEnabled(true); // 误报按钮始终启用
-            falsePositiveButton.setForeground(Color.WHITE);
+            falsePositiveButton.setForeground(JBColor.foreground());
             falsePositiveButton.setOpaque(true);
             falsePositiveButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             falsePositiveButton.setToolTipText("标记为误报");
@@ -1937,9 +1937,9 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             
             // 设置按钮正常状态的样式
             confirmButton.setBackground(new Color(76, 175, 80)); // Material Design Green
-            confirmButton.setForeground(Color.WHITE);
+            confirmButton.setForeground(JBColor.foreground());
             falsePositiveButton.setBackground(new Color(255, 152, 0));
-            falsePositiveButton.setForeground(Color.WHITE);
+            falsePositiveButton.setForeground(JBColor.foreground());
             
             // 使用GridBagConstraints将按钮添加到容器中，实现完美居中
             GridBagConstraints gbc = new GridBagConstraints();
@@ -1983,7 +1983,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             confirmButton.setContentAreaFilled(true);
             confirmButton.setBackground(new Color(76, 175, 80)); // Material Design Green
             confirmButton.setEnabled(true); // 确认按钮始终启用，在点击时检查状态
-            confirmButton.setForeground(Color.WHITE);
+            confirmButton.setForeground(JBColor.foreground());
             confirmButton.setOpaque(true);
             confirmButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             confirmButton.setToolTipText("确认评审意见");
@@ -2023,7 +2023,7 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             falsePositiveButton.setContentAreaFilled(true);
             falsePositiveButton.setBackground(new Color(255, 152, 0)); // Material Design Orange
             falsePositiveButton.setEnabled(true); // 误报按钮始终启用
-            falsePositiveButton.setForeground(Color.WHITE);
+            falsePositiveButton.setForeground(JBColor.foreground());
             falsePositiveButton.setOpaque(true);
             falsePositiveButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             falsePositiveButton.setToolTipText("标记为误报");
@@ -2053,9 +2053,9 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             
             // 设置按钮正常状态的样式
             confirmButton.setBackground(new Color(76, 175, 80)); // Material Design Green
-            confirmButton.setForeground(Color.WHITE);
+            confirmButton.setForeground(JBColor.foreground());
             falsePositiveButton.setBackground(new Color(255, 152, 0));
-            falsePositiveButton.setForeground(Color.WHITE);
+            falsePositiveButton.setForeground(JBColor.foreground());
             
             confirmButton.addActionListener(e -> {
                 LOG.info("=== 确认按钮被点击 ===");

@@ -815,7 +815,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             // 生成文件按钮
             JButton generateButton = new JButton("生成文件");
             generateButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 11));  // 字体稍小
-            generateButton.setForeground(Color.WHITE);
+            generateButton.setForeground(JBColor.foreground());
             generateButton.setBackground(new JBColor(new Color(0x2B5AB8), new Color(0x2B5AB8)));
             generateButton.setBorder(BorderFactory.createEmptyBorder(3, 6, 3, 6));  // 减少内边距
             generateButton.setFocusPainted(false);
