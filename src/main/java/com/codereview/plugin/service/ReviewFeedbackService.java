@@ -84,7 +84,7 @@ public final class ReviewFeedbackService {
         try {
             LOG.info("准备调用反馈API，URL: " + FEEDBACK_API_URL);
             
-            RestTemplate restTemplate = ReviewService.createUnsafeRestTemplate();
+            RestTemplate restTemplate = ReviewService.createUnsafeRestTemplate(authService);
 
 
 

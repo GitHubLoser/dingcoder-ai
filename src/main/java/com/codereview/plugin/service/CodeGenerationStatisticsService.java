@@ -35,7 +35,7 @@ public class CodeGenerationStatisticsService {
     public void sendStatistics(String codeId, String userName, String className, String type, String feedbackType, String feedbackContent) {
         try {
             LOG.info("[统计] sendStatistics参数: codeId=" + codeId + ", userName=" + userName + ", className=" + className + ", type=" + type + ", feedbackType=" + feedbackType + ", feedbackContent=" + feedbackContent);
-            RestTemplate restTemplate = ReviewService.createUnsafeRestTemplate();
+            RestTemplate restTemplate = ReviewService.createUnsafeRestTemplate(authService);
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             String token = authService.getToken();

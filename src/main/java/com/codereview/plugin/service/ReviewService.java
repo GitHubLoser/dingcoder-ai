@@ -312,6 +312,10 @@ public final class ReviewService {
     
     // 新增：创建跳过SSL校验的RestTemplate
     public static RestTemplate createUnsafeRestTemplate() {
+        return createUnsafeRestTemplate(null);
+    }
+    
+    public static RestTemplate createUnsafeRestTemplate(AuthService authService) {
         try {
             // 创建信任所有证书的SSLContext
             javax.net.ssl.SSLContext sslContext = javax.net.ssl.SSLContext.getInstance("TLS");
@@ -335,7 +339,16 @@ public final class ReviewService {
             org.springframework.http.client.HttpComponentsClientHttpRequestFactory factory = new org.springframework.http.client.HttpComponentsClientHttpRequestFactory(httpClient);
             factory.setConnectTimeout(30000);
             factory.setReadTimeout(60000);
-            return new RestTemplate(factory);
+            
+            RestTemplate restTemplate = new RestTemplate(factory);
+            
+            // 如果提供了AuthService，添加TokenInterceptor
+            if (authService != null) {
+                restTemplate.getInterceptors().add(new TokenInterceptor(authService));
+                LOG.info("已为RestTemplate添加TokenInterceptor");
+            }
+            
+            return restTemplate;
         } catch (Exception e) {
             throw new RuntimeException("无法创建信任所有证书的RestTemplate", e);
         }
@@ -361,7 +374,7 @@ public final class ReviewService {
                     Thread.sleep(1000 * retryCount);
                 }
                 
-                RestTemplate restTemplate = createUnsafeRestTemplate();
+                RestTemplate restTemplate = createUnsafeRestTemplate(authService);
                 
                 // 设置请求头 - 改为JSON格式
                 HttpHeaders headers = new HttpHeaders();
@@ -596,7 +609,7 @@ public final class ReviewService {
                     Thread.sleep(1000 * retryCount);
                 }
                 
-                RestTemplate restTemplate = createUnsafeRestTemplate();
+                RestTemplate restTemplate = createUnsafeRestTemplate(authService);
                 
                 // 设置请求头 - 改为JSON格式
                 HttpHeaders headers = new HttpHeaders();

@@ -75,5 +75,13 @@
             </action>
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </group>
+        
+        <!-- Token快速测试Action -->
+        <action id="com.codereview.plugin.action.TokenQuickTestAction"
+                class="com.codereview.plugin.action.TokenQuickTestAction"
+                text="Token快速测试"
+                description="即时测试Token自动刷新功能（模拟即将过期）">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
     </actions>
 </idea-plugin> 

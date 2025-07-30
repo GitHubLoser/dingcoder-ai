@@ -20,6 +20,9 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.concurrent.atomic.AtomicBoolean;
 import com.intellij.openapi.project.Project;
 
 /**
@@ -37,6 +40,19 @@ public final class AuthService {
 
     private  static final String loginUrl = "/api/iam/v2/identity/login";
 
+    // Token管理相关常量
+    private static final boolean TEST_MODE = false; // 测试模式：token 30秒后过期（生产环境设为false）
+    private static final double TEST_TOKEN_EXPIRE_MINUTES = 0.5; // 测试模式下的token过期时间（0.5分钟 = 30秒）
+    private static final long NORMAL_TOKEN_EXPIRE_MINUTES = 55; // 正常模式下的token过期时间（分钟）
+    private static final double REFRESH_BEFORE_EXPIRE_MINUTES = 5.0; // 过期前5分钟开始刷新（生产环境）
+    private static final long TOKEN_CHECK_INTERVAL_MS = 60000; // token检查间隔（1分钟，生产环境）
+
+    // Token状态管理
+    private static volatile long tokenExpireTime = 0; // token过期时间戳
+    private static volatile String storedUsername = null; // 存储用户名用于刷新
+    private static volatile String storedPassword = null; // 存储密码用于刷新
+    private static volatile AtomicBoolean isRefreshing = new AtomicBoolean(false); // 是否正在刷新token
+    private static Timer tokenRefreshTimer = null; // token刷新定时器
 
     // 全局登录状态管理
     private static volatile boolean globalLoginState = false;
@@ -51,7 +67,6 @@ public final class AuthService {
     private String userSid = null;
 
     public static final String IDENTITY_PUBLIC_KEY = "/api/iam/v2/identity/publickey";
-
 
     /**
      * 获取认证服务的实例（Project级别）
@@ -100,7 +115,7 @@ public final class AuthService {
             // 优先检查全局状态，确保多窗口一致性
             if (globalLoginState && globalToken != null) {
                 actualState = true;
-            } else if (isLoggedIn && token != null) {
+            } else if (this.isLoggedIn && this.token != null) {
                 // 如果全局状态为空，使用实例状态（向后兼容）
                 actualState = true;
             }
@@ -111,7 +126,335 @@ public final class AuthService {
         return actualState;
     }
 
+    /**
+     * 检查token是否即将过期
+     */
+    public boolean isTokenExpiringSoon() {
+        long currentTime = System.currentTimeMillis();
+        long expireTime = tokenExpireTime;
+        
+        if (expireTime == 0) {
+            return false; // 没有设置过期时间，认为不会过期
+        }
+        
+        // 检查是否在30秒内过期
+        long timeUntilExpire = expireTime - currentTime;
+        long refreshThreshold = (long)(REFRESH_BEFORE_EXPIRE_MINUTES * 60 * 1000); // 30秒转换为毫秒
+        
+        boolean isExpiringSoon = timeUntilExpire <= refreshThreshold;
+        
+        if (isExpiringSoon) {
+            log.info("Token即将过期，剩余时间: {} 分钟", String.format("%.2f", (double)timeUntilExpire / (60 * 1000)));
+        }
+        
+        return isExpiringSoon;
+    }
 
+    /**
+     * 检查token是否已过期
+     */
+    public boolean isTokenExpired() {
+        long currentTime = System.currentTimeMillis();
+        long expireTime = tokenExpireTime;
+        
+        if (expireTime == 0) {
+            return false; // 没有设置过期时间，认为不会过期
+        }
+        
+        boolean isExpired = currentTime >= expireTime;
+        
+        if (isExpired) {
+            log.warn("Token已过期，过期时间: {}", new java.util.Date(expireTime));
+        }
+        
+        return isExpired;
+    }
+
+    /**
+     * 启动token自动刷新机制
+     */
+    private void startTokenRefreshTimer() {
+        try {
+            log.info("开始启动token自动刷新定时器");
+            
+            if (tokenRefreshTimer != null) {
+                log.info("取消现有定时器");
+                tokenRefreshTimer.cancel();
+            }
+            
+            log.info("创建新的定时器");
+            tokenRefreshTimer = new Timer("TokenRefreshTimer", true);
+            
+            // 动态调整检查频率：根据token剩余时间
+            long initialDelay = calculateNextCheckDelay();
+            log.info("设置定时器任务，初始延迟: {} 毫秒，后续间隔: {} 毫秒", initialDelay, TOKEN_CHECK_INTERVAL_MS);
+            
+            tokenRefreshTimer.scheduleAtFixedRate(new TimerTask() {
+                @Override
+                public void run() {
+                    try {
+                        log.debug("定时器触发 - 开始检查token状态");
+                        checkAndRefreshToken();
+                    } catch (Exception e) {
+                        log.error("Token刷新检查时发生错误", e);
+                    }
+                }
+            }, initialDelay, TOKEN_CHECK_INTERVAL_MS);
+            
+            log.info("Token自动刷新定时器已启动，检查间隔: {} 毫秒", TOKEN_CHECK_INTERVAL_MS);
+        } catch (Exception e) {
+            log.error("启动token自动刷新定时器时发生错误", e);
+        }
+    }
+    
+    /**
+     * 计算下次检查的延迟时间
+     */
+    private long calculateNextCheckDelay() {
+        double remainingMinutes = getTokenRemainingMinutes();
+        
+        // 如果token即将过期（剩余时间 <= 10分钟），立即检查
+        if (remainingMinutes <= 10.0) {
+            return 1000; // 1秒后检查
+        }
+        
+        // 如果token还有很长时间，延迟检查
+        if (remainingMinutes > 30.0) {
+            return 5 * 60 * 1000; // 5分钟后检查
+        }
+        
+        // 默认1分钟后检查
+        return TOKEN_CHECK_INTERVAL_MS;
+    }
+
+    /**
+     * 检查并刷新token
+     */
+    private void checkAndRefreshToken() {
+        // 如果没有登录，不需要刷新
+        if (!isLoggedIn()) {
+            log.debug("用户未登录，跳过token检查");
+            return;
+        }
+        
+        // 记录当前token状态
+        double remainingMinutes = getTokenRemainingMinutes();
+        boolean isExpiringSoon = isTokenExpiringSoon();
+        log.debug("Token检查 - 剩余时间: {} 分钟, 是否即将过期: {}", String.format("%.2f", remainingMinutes), isExpiringSoon);
+        
+        // 如果token即将过期，尝试刷新
+        if (isExpiringSoon && !isRefreshing.get()) {
+            log.info("检测到token即将过期，开始自动刷新");
+            refreshTokenAsync();
+        } else if (isExpiringSoon) {
+            log.debug("Token即将过期，但刷新已在进行中");
+        }
+    }
+
+    /**
+     * 异步刷新token
+     */
+    private void refreshTokenAsync() {
+        if (isRefreshing.compareAndSet(false, true)) {
+            Thread refreshThread = new Thread(() -> {
+                try {
+                    log.info("开始异步刷新token");
+                    
+                    // 检查是否有存储的用户名和密码
+                    if (storedUsername == null || storedPassword == null) {
+                        log.warn("无法刷新token：未存储用户名或密码");
+                        return;
+                    }
+                    
+                    // 重新登录获取新token（避免重复启动定时器）
+                    Map<String, Object> loginResult = performLoginWithoutTimer(storedUsername, storedPassword);
+                    
+                    if (loginResult != null && loginResult.get(CommonConstant.TOKEN) != null) {
+                        log.info("Token刷新成功");
+                    } else {
+                        log.error("Token刷新失败");
+                    }
+                } catch (Exception e) {
+                    log.error("Token刷新过程中发生错误", e);
+                } finally {
+                    isRefreshing.set(false);
+                }
+            });
+            
+            refreshThread.setDaemon(true);
+            refreshThread.start();
+        } else {
+            log.info("Token刷新已在进行中，跳过本次刷新");
+        }
+    }
+
+    /**
+     * 设置token过期时间
+     */
+    private void setTokenExpireTime() {
+        long currentTime = System.currentTimeMillis();
+        double expireMinutes = TEST_MODE ? TEST_TOKEN_EXPIRE_MINUTES : NORMAL_TOKEN_EXPIRE_MINUTES;
+        long expireTime = currentTime + (long)(expireMinutes * 60 * 1000);
+        
+        tokenExpireTime = expireTime;
+        
+        log.info("Token过期时间已设置: {} ({}分钟后过期)", 
+                new java.util.Date(expireTime), expireMinutes);
+    }
+
+    /**
+     * 获取token剩余有效时间（分钟）
+     */
+    public double getTokenRemainingMinutes() {
+        long currentTime = System.currentTimeMillis();
+        long expireTime = tokenExpireTime;
+        
+        if (expireTime == 0) {
+            return -1; // 未设置过期时间
+        }
+        
+        long remainingMs = expireTime - currentTime;
+        return remainingMs > 0 ? (double)remainingMs / (60 * 1000) : 0;
+    }
+
+    /**
+     * 强制刷新token（供测试使用）
+     */
+    public void forceRefreshToken() {
+        log.info("强制刷新token");
+        refreshTokenAsync();
+    }
+    
+    /**
+     * 手动触发token检查（供测试使用）
+     */
+    public void manualCheckToken() {
+        log.info("手动触发token检查");
+        checkAndRefreshToken();
+    }
+    
+    /**
+     * 获取token状态信息（供测试使用）
+     */
+    public String getTokenStatusInfo() {
+        double remainingMinutes = getTokenRemainingMinutes();
+        boolean isExpiringSoon = isTokenExpiringSoon();
+        boolean isExpired = isTokenExpired();
+        boolean isRefreshingNow = isRefreshing.get();
+        
+        return String.format("Token状态 - 剩余时间: %.2f分钟, 即将过期: %s, 已过期: %s, 正在刷新: %s", 
+                remainingMinutes, isExpiringSoon, isExpired, isRefreshingNow);
+    }
+    
+    /**
+     * 获取当前是否为测试模式
+     */
+    public static boolean isTestMode() {
+        return TEST_MODE;
+    }
+
+
+    /**
+     * 执行登录但不启动定时器（用于token刷新）
+     */
+    private Map<String, Object> performLoginWithoutTimer(String username, String password) {
+        String uri = iamUrl + loginUrl;
+        Map<String, Object> retrunMap = new HashMap<>();
+
+        try {
+            log.info("开始刷新登录，用户名: {}", username);
+            
+            //1.客户端生成公私钥
+            HashMap<String, String> keyMap = getKeyPairMap();
+            if (keyMap != null) {
+                String clientPublicKey = keyMap.get(CommonConstant.PUBLIC_KEY);
+                String privateKey = keyMap.get(CommonConstant.PRIVATE_KEY);
+                
+                //2.获取服务端公钥
+                String serverPublicKey = getServerPublicKey();
+                if (StringUtils.isEmpty(serverPublicKey)) {
+                    log.error("获取服务端公钥失败");
+                    return retrunMap;
+                }
+                
+                //3.根据服务端公钥加密客户端公钥
+                String encryptPublicKey = RSAUtils.encryptByPublicKey(clientPublicKey, serverPublicKey);
+                //4.获取加密后的AES的key值
+                String encryptAesKey = getAesPublicKey(encryptPublicKey);
+                if (StringUtils.isEmpty(encryptAesKey)) {
+                    log.error("获取AES密钥失败");
+                    return retrunMap;
+                }
+                
+                //5.根据客户端私有解密加密的aes的key值
+                String aesKey = new String(RSAUtils.decryptByPrivateKey(Base64.decodeBase64(encryptAesKey), privateKey), StandardCharsets.UTF_8);
+                String passwordHash = AESUtils.aesEncryptByBase64(password, aesKey);
+                //6.登录
+                RestTemplate restTemplate = ReviewService.createUnsafeRestTemplate();
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.APPLICATION_JSON);
+                headers.add(CommonConstant.DIGI_MIDDLEWARE_AUTH_APP,iamApToken);
+
+                Map<String, String> requestEntity = new HashMap<>(5);
+                requestEntity.put(CommonConstant.IDENTITY_TYPE, CommonConstant.TOKEN);
+                requestEntity.put(CommonConstant.USER_ID, username);
+                requestEntity.put(CommonConstant.PASSWORD_HASH, passwordHash);
+                requestEntity.put(CommonConstant.TENANT_ID, "99990000");
+                requestEntity.put(CommonConstant.CLIENT_ENCRYPT_PUBLIC_KEY, encryptPublicKey);
+
+                HttpEntity<Map<String, String>> httpEntity = new HttpEntity<>(requestEntity, headers);
+                ResponseEntity<Map> response = restTemplate.exchange(uri, HttpMethod.POST, httpEntity, Map.class);
+                Map<String, Object> resultMap = response.getBody();
+                
+                if (resultMap != null && resultMap.get(CommonConstant.TOKEN) != null) {
+                    // 登录成功，更新全局状态和内部状态
+                    String token = String.valueOf(resultMap.get(CommonConstant.TOKEN));
+                    String userSid = String.valueOf(resultMap.get(CommonConstant.SID));
+                    
+                    // 设置token过期时间
+                    setTokenExpireTime();
+                    
+                    // 更新全局状态（添加同步保护）
+                    synchronized (AuthService.class) {
+                        globalToken = token;
+                        globalCurrentUser = username;
+                        globalLoginState = true;
+                        globalUserSid = userSid;
+                    }
+                    
+                    // 更新实例状态（向后兼容，添加同步保护）
+                    synchronized (this) {
+                        this.token = token;
+                        this.currentUser = username;
+                        this.isLoggedIn = true;
+                        this.userSid = userSid;
+                    }
+                    
+                    // 强制清除缓存，让其他窗口立即重新检测登录状态
+                    clearLoginCache();
+                    
+                    retrunMap.put(CommonConstant.TOKEN, token);
+                    retrunMap.put(CommonConstant.USER_SID, resultMap.get(CommonConstant.SID));
+                    
+                    log.info("Token刷新登录成功，用户: {}, Token: {}, UserSid: {}, 剩余有效时间: {} 分钟", 
+                            username, token.substring(0, Math.min(token.length(), 10)) + "...", 
+                            this.userSid, getTokenRemainingMinutes());
+                    
+                    return retrunMap;
+                } else {
+                    log.warn("Token刷新登录失败，服务器响应: {}", resultMap);
+                }
+            } else {
+                log.error("客户端公私钥生成失败");
+            }
+        } catch (Exception ex) {
+            String message = ex.getMessage();
+            log.error("Token刷新登录失败，异常信息: {}", message, ex);
+            return new HashMap<>();
+        }
+
+        return retrunMap;
+    }
 
     /**
      * 登录iam
@@ -191,6 +534,13 @@ public final class AuthService {
                     String token = String.valueOf(resultMap.get(CommonConstant.TOKEN));
                     String userSid = String.valueOf(resultMap.get(CommonConstant.SID));
                     
+                    // 存储用户名和密码用于token刷新
+                    storedUsername = username;
+                    storedPassword = password;
+                    
+                    // 设置token过期时间
+                    setTokenExpireTime();
+                    
                     // 更新全局状态（添加同步保护）
                     synchronized (AuthService.class) {
                         globalToken = token;
@@ -210,10 +560,22 @@ public final class AuthService {
                     // 强制清除缓存，让其他窗口立即重新检测登录状态
                     clearLoginCache();
                     
+                    // 启动token自动刷新机制
+                    log.info("准备启动token自动刷新定时器");
+                    startTokenRefreshTimer();
+                    log.info("token自动刷新定时器启动完成");
+                    
                     retrunMap.put(CommonConstant.TOKEN, token);
                     retrunMap.put(CommonConstant.USER_SID, resultMap.get(CommonConstant.SID));
                     
-                    log.info("登录成功，用户: {}, Token: {}, UserSid: {}", username, token.substring(0, Math.min(token.length(), 10)) + "...", this.userSid);
+                    log.info("登录成功，用户: {}, Token: {}, UserSid: {}, 剩余有效时间: {} 分钟", 
+                            username, token.substring(0, Math.min(token.length(), 10)) + "...", 
+                            this.userSid, getTokenRemainingMinutes());
+                    
+                    // 验证登录状态
+                    log.info("验证登录状态 - isLoggedIn(): {}", isLoggedIn());
+                    log.info("验证token过期时间: {}", tokenExpireTime);
+                    log.info("验证存储的用户名: {}", storedUsername != null ? "已存储" : "未存储");
                     
                     // 登录成功后启动MQTT连接，传递userSid
                     startMqttConnection(username, this.userSid);
@@ -351,6 +713,19 @@ public final class AuthService {
      */
     public void logout() {
         log.info("用户 {} 开始退出登录", currentUser);
+        
+        // 停止token刷新定时器
+        if (tokenRefreshTimer != null) {
+            tokenRefreshTimer.cancel();
+            tokenRefreshTimer = null;
+            log.info("Token刷新定时器已停止");
+        }
+        
+        // 清除token管理相关状态
+        tokenExpireTime = 0;
+        storedUsername = null;
+        storedPassword = null;
+        isRefreshing.set(false);
         
         // 清空面板内容并更新所有窗口UI状态
         try {
