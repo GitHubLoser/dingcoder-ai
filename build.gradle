@@ -4,7 +4,7 @@ plugins {
 }
 
 group 'com.codereview'
-version '2.1.0'
+version '2.0.1'
 
 sourceCompatibility = 8
 targetCompatibility = 8
