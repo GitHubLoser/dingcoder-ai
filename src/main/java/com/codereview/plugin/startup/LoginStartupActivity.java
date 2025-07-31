@@ -7,15 +7,15 @@ import org.jetbrains.annotations.NotNull;
 
 /**
  * 插件启动活动
- * 现在不再强制用户登录，让用户自己选择何时登录
+ * 现在只检查登录状态，不执行登出操作
  */
 public class LoginStartupActivity implements StartupActivity {
     @Override
     public void runActivity(@NotNull Project project) {
-        // IDEA启动时自动登出
-        AuthService.getInstance().logout();
-        // 不再自动弹出登录对话框
-        // 用户可以通过界面上的登录按钮主动登录
+        // 移除启动时的登出操作，避免IDEA启动卡住
+        // AuthService.getInstance().logout();
+        
+        // 只检查登录状态，不执行清理操作
         AuthService authService = AuthService.getInstance();
         System.out.println("DingCoder AI 插件已启动，用户登录状态: " + (authService.isLoggedIn() ? "已登录" : "未登录"));
     }

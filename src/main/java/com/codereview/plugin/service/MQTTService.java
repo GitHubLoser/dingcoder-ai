@@ -380,7 +380,8 @@ public final class MQTTService {
                 // 断开连接
                 if (mqttClient != null && mqttClient.isConnected()) {
                     try {
-                        mqttClient.disconnect();
+                        // 设置较短的超时时间，避免长时间阻塞
+                        mqttClient.disconnect(1000); // 1秒超时
                         LOG.info("强制断开MQTT连接");
                     } catch (Exception e) {
                         LOG.error("强制断开MQTT连接时出错", e);

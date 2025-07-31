@@ -709,6 +709,41 @@ public final class AuthService {
         return keyMap;
     }
     /**
+     * 安全的退出登录（用于启动时，避免阻塞）
+     */
+    public void safeLogout() {
+        log.info("执行安全的退出登录操作");
+        
+        // 只清理内存状态，不执行可能阻塞的操作
+        tokenExpireTime = 0;
+        storedUsername = null;
+        storedPassword = null;
+        isRefreshing.set(false);
+        
+        // 停止定时器
+        if (tokenRefreshTimer != null) {
+            tokenRefreshTimer.cancel();
+            tokenRefreshTimer = null;
+        }
+        
+        // 清除状态（不使用同步锁，避免死锁）
+        globalLoginState = false;
+        globalCurrentUser = null;
+        globalToken = null;
+        globalUserSid = null;
+        
+        this.isLoggedIn = false;
+        this.currentUser = null;
+        this.token = null;
+        this.userSid = null;
+        
+        // 清除缓存
+        clearLoginCache();
+        
+        log.info("安全退出登录完成");
+    }
+
+    /**
      * 退出登录过程
      */
     public void logout() {

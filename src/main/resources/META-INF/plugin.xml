@@ -53,6 +53,9 @@
         
         <!-- 启动活动 - 用于在启动时检查登录状态 -->
         <postStartupActivity implementation="com.codereview.plugin.startup.LoginStartupActivity"/>
+        
+        <!-- 应用退出监听器 - 用于在IDEA退出时执行登出操作 -->
+        <applicationListener implementation="com.codereview.plugin.startup.ApplicationShutdownListener"/>
     </extensions>
 
     <!-- 动作定义 -->

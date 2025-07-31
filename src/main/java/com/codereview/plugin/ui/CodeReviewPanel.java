@@ -103,6 +103,12 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
     // MQTT消息字段存储 - 用于反馈接口
     private java.util.Map<Integer, MqttMessageData> mqttDataMap = new java.util.HashMap<>();
     
+    // 新增：记录每行的反馈状态，防止重复提交
+    private java.util.Map<Integer, String> feedbackStatusMap = new java.util.HashMap<>();
+    
+    // 新增：记录正在提交反馈的行，防止重复点击
+    private java.util.Set<Integer> submittingRows = new java.util.HashSet<>();
+    
     // 静态引用，供外部访问
     private static final Map<Project, CodeReviewPanel> projectInstances = new ConcurrentHashMap<>();
     
@@ -490,10 +496,10 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         reviewColumn.setPreferredWidth(400);
         reviewColumn.setMinWidth(250);
         
-        TableColumn feedbackColumn = resultTable.getColumnModel().getColumn(2);
-        feedbackColumn.setPreferredWidth(100);
-        feedbackColumn.setMinWidth(100);
-        feedbackColumn.setMaxWidth(100);
+                    TableColumn feedbackColumn = resultTable.getColumnModel().getColumn(2);
+            feedbackColumn.setPreferredWidth(150);
+            feedbackColumn.setMinWidth(120);
+            feedbackColumn.setMaxWidth(200);
         
         // 设置多行渲染器（只读但可选择）
         resultTable.getColumnModel().getColumn(0).setCellRenderer(new MultiLineTableCellRenderer());
@@ -834,6 +840,13 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             reviewFileButton.setEnabled(true);
             reviewFileButton.setText("开始评审");
         }
+        
+        // 重置MQTT状态
+        mqttReceived = false; // 重置时禁用反馈按钮
+        mqttDataMap.clear(); // 清空MQTT数据映射
+        feedbackStatusMap.clear(); // 清空反馈状态映射
+        submittingRows.clear(); // 清空正在提交的行
+        updateFeedbackButtonsState(); // 更新按钮状态
     }
     
     /**
@@ -1875,71 +1888,117 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             JPanel buttonPanel = new JPanel(new GridBagLayout());
             buttonPanel.setOpaque(false);
             
-            // 已确认按钮 - 绿色主题
-            JButton confirmButton = new JButton("✓");
-            confirmButton.setPreferredSize(new Dimension(28, 24));
+            // 获取当前行的反馈状态
+            String feedbackStatus = feedbackStatusMap.get(row);
+            boolean isSubmitting = submittingRows.contains(row);
+            
+            // 已确认按钮 - 根据状态显示不同文本
+            JButton confirmButton = new JButton();
+            if ("confirmed".equals(feedbackStatus)) {
+                confirmButton.setText("已确认");
+                confirmButton.setBackground(new Color(76, 175, 80)); // 绿色
+                confirmButton.setEnabled(false);
+                confirmButton.setPreferredSize(new Dimension(60, 24)); // 增加宽度以容纳"已确认"文本
+            } else if ("false_positive".equals(feedbackStatus)) {
+                confirmButton.setText("确认");
+                confirmButton.setBackground(new Color(158, 158, 158)); // 灰色
+                confirmButton.setEnabled(false);
+                confirmButton.setPreferredSize(new Dimension(50, 24));
+            } else {
+                confirmButton.setText("确认");
+                confirmButton.setBackground(new Color(76, 175, 80)); // Material Design Green
+                confirmButton.setEnabled(!isSubmitting && mqttReceived);
+                confirmButton.setPreferredSize(new Dimension(50, 24));
+            }
+            
             confirmButton.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
             confirmButton.setFocusable(false);
             confirmButton.setMargin(new Insets(0,0,0,0));
             confirmButton.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
             confirmButton.setContentAreaFilled(true);
-            confirmButton.setBackground(new Color(76, 175, 80)); // Material Design Green
-            confirmButton.setEnabled(true); // 确认按钮始终启用，在点击时检查状态
             confirmButton.setForeground(JBColor.foreground());
             confirmButton.setOpaque(true);
             confirmButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             confirmButton.setToolTipText("确认评审意见");
             
-            // 悬停效果
-            confirmButton.addMouseListener(new java.awt.event.MouseAdapter() {
-                @Override
-                public void mouseEntered(java.awt.event.MouseEvent e) {
-                    if (mqttReceived) {
-                        confirmButton.setBackground(new Color(67, 160, 71));
-                    }
-                }
-                @Override
-                public void mouseExited(java.awt.event.MouseEvent e) {
-                    if (mqttReceived) {
-                        confirmButton.setBackground(new Color(76, 175, 80));
-                    }
-                }
-            });
-
-            // 误报按钮 - 橙色主题
-            JButton falsePositiveButton = new JButton("✗");
-            falsePositiveButton.setPreferredSize(new Dimension(28, 24));
+            // 误报按钮 - 根据状态显示不同文本
+            JButton falsePositiveButton = new JButton();
+            if ("false_positive".equals(feedbackStatus)) {
+                falsePositiveButton.setText("已误报");
+                falsePositiveButton.setBackground(new Color(255, 152, 0)); // 橙色
+                falsePositiveButton.setEnabled(false);
+                falsePositiveButton.setPreferredSize(new Dimension(60, 24)); // 增加宽度以容纳"已误报"文本
+            } else if ("confirmed".equals(feedbackStatus)) {
+                falsePositiveButton.setText("误报");
+                falsePositiveButton.setBackground(new Color(158, 158, 158)); // 灰色
+                falsePositiveButton.setEnabled(false);
+                falsePositiveButton.setPreferredSize(new Dimension(50, 24));
+            } else {
+                falsePositiveButton.setText("误报");
+                falsePositiveButton.setBackground(new Color(255, 152, 0));
+                falsePositiveButton.setEnabled(!isSubmitting && mqttReceived);
+                falsePositiveButton.setPreferredSize(new Dimension(50, 24));
+            }
+            
             falsePositiveButton.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
             falsePositiveButton.setFocusable(false);
             falsePositiveButton.setMargin(new Insets(0,0,0,0));
             falsePositiveButton.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
             falsePositiveButton.setContentAreaFilled(true);
-            falsePositiveButton.setBackground(new Color(255, 152, 0)); // Material Design Orange
-            falsePositiveButton.setEnabled(true); // 误报按钮始终启用
             falsePositiveButton.setForeground(JBColor.foreground());
             falsePositiveButton.setOpaque(true);
             falsePositiveButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             falsePositiveButton.setToolTipText("标记为误报");
             
             // 悬停效果
-            falsePositiveButton.addMouseListener(new java.awt.event.MouseAdapter() {
+            confirmButton.addMouseListener(new java.awt.event.MouseAdapter() {
                 @Override
                 public void mouseEntered(java.awt.event.MouseEvent e) {
-                    // 误报按钮始终响应悬停效果
-                    falsePositiveButton.setBackground(new Color(245, 124, 0));
+                    if (confirmButton.isEnabled()) {
+                        confirmButton.setBackground(new Color(69, 160, 73));
+                        // 强制显示tooltip
+                        ToolTipManager.sharedInstance().setInitialDelay(0);
+                        ToolTipManager.sharedInstance().setDismissDelay(5000);
+                        ToolTipManager.sharedInstance().mouseMoved(e);
+                    }
                 }
                 @Override
                 public void mouseExited(java.awt.event.MouseEvent e) {
-                    // 误报按钮始终响应悬停效果
-                    falsePositiveButton.setBackground(new Color(255, 152, 0));
+                    if (confirmButton.isEnabled()) {
+                        confirmButton.setBackground(new Color(76, 175, 80));
+                    }
+                }
+                @Override
+                public void mouseMoved(java.awt.event.MouseEvent e) {
+                    // 确保tooltip保持显示
+                    ToolTipManager.sharedInstance().mouseMoved(e);
                 }
             });
             
-            // 设置按钮正常状态的样式
-            confirmButton.setBackground(new Color(76, 175, 80)); // Material Design Green
-            confirmButton.setForeground(JBColor.foreground());
-            falsePositiveButton.setBackground(new Color(255, 152, 0));
-            falsePositiveButton.setForeground(JBColor.foreground());
+            // 误报按钮悬停效果
+            falsePositiveButton.addMouseListener(new java.awt.event.MouseAdapter() {
+                @Override
+                public void mouseEntered(java.awt.event.MouseEvent e) {
+                    if (falsePositiveButton.isEnabled()) {
+                        falsePositiveButton.setBackground(new Color(245, 124, 0));
+                        // 强制显示tooltip
+                        ToolTipManager.sharedInstance().setInitialDelay(0);
+                        ToolTipManager.sharedInstance().setDismissDelay(5000);
+                        ToolTipManager.sharedInstance().mouseMoved(e);
+                    }
+                }
+                @Override
+                public void mouseExited(java.awt.event.MouseEvent e) {
+                    if (falsePositiveButton.isEnabled()) {
+                        falsePositiveButton.setBackground(new Color(255, 152, 0));
+                    }
+                }
+                @Override
+                public void mouseMoved(java.awt.event.MouseEvent e) {
+                    // 确保tooltip保持显示
+                    ToolTipManager.sharedInstance().mouseMoved(e);
+                }
+            });
             
             // 使用GridBagConstraints将按钮添加到容器中，实现完美居中
             GridBagConstraints gbc = new GridBagConstraints();
@@ -1967,42 +2026,50 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
         private int editingRow;
         
         public FeedbackButtonEditor() {
-            panel = new JPanel(new BorderLayout());
+            panel = new JPanel(new GridBagLayout());
+            panel.setOpaque(false);
             
-            // 创建按钮容器面板，使用GridBagLayout实现完美居中
-            JPanel buttonPanel = new JPanel(new GridBagLayout());
-            buttonPanel.setOpaque(false);
-            
-            // 已确认按钮 - 绿色主题
-            confirmButton = new JButton("✓");
+            // 创建确认按钮
+            confirmButton = new JButton();
             confirmButton.setPreferredSize(new Dimension(28, 24));
             confirmButton.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
             confirmButton.setFocusable(false);
             confirmButton.setMargin(new Insets(0,0,0,0));
             confirmButton.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
             confirmButton.setContentAreaFilled(true);
-            confirmButton.setBackground(new Color(76, 175, 80)); // Material Design Green
-            confirmButton.setEnabled(true); // 确认按钮始终启用，在点击时检查状态
             confirmButton.setForeground(JBColor.foreground());
             confirmButton.setOpaque(true);
             confirmButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             confirmButton.setToolTipText("确认评审意见");
             
-            // 悬停效果和强制tooltip显示
+            // 创建误报按钮
+            falsePositiveButton = new JButton();
+            falsePositiveButton.setPreferredSize(new Dimension(28, 24));
+            falsePositiveButton.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
+            falsePositiveButton.setFocusable(false);
+            falsePositiveButton.setMargin(new Insets(0,0,0,0));
+            falsePositiveButton.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
+            falsePositiveButton.setContentAreaFilled(true);
+            falsePositiveButton.setForeground(JBColor.foreground());
+            falsePositiveButton.setOpaque(true);
+            falsePositiveButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            falsePositiveButton.setToolTipText("标记为误报");
+            
+            // 确认按钮悬停效果
             confirmButton.addMouseListener(new java.awt.event.MouseAdapter() {
                 @Override
                 public void mouseEntered(java.awt.event.MouseEvent e) {
-                    if (mqttReceived) {
-                        confirmButton.setBackground(new Color(67, 160, 71));
+                    if (confirmButton.isEnabled()) {
+                        confirmButton.setBackground(new Color(69, 160, 73));
+                        // 强制显示tooltip
+                        ToolTipManager.sharedInstance().setInitialDelay(0);
+                        ToolTipManager.sharedInstance().setDismissDelay(5000);
+                        ToolTipManager.sharedInstance().mouseMoved(e);
                     }
-                    // 强制显示tooltip
-                    ToolTipManager.sharedInstance().setInitialDelay(0);
-                    ToolTipManager.sharedInstance().setDismissDelay(5000);
-                    ToolTipManager.sharedInstance().mouseMoved(e);
                 }
                 @Override
                 public void mouseExited(java.awt.event.MouseEvent e) {
-                    if (mqttReceived) {
+                    if (confirmButton.isEnabled()) {
                         confirmButton.setBackground(new Color(76, 175, 80));
                     }
                 }
@@ -2012,37 +2079,24 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                     ToolTipManager.sharedInstance().mouseMoved(e);
                 }
             });
-
-            // 误报按钮 - 橙色主题
-            falsePositiveButton = new JButton("✗");
-            falsePositiveButton.setPreferredSize(new Dimension(28, 24));
-            falsePositiveButton.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
-            falsePositiveButton.setFocusable(false);
-            falsePositiveButton.setMargin(new Insets(0,0,0,0));
-            falsePositiveButton.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
-            falsePositiveButton.setContentAreaFilled(true);
-            falsePositiveButton.setBackground(new Color(255, 152, 0)); // Material Design Orange
-            falsePositiveButton.setEnabled(true); // 误报按钮始终启用
-            falsePositiveButton.setForeground(JBColor.foreground());
-            falsePositiveButton.setOpaque(true);
-            falsePositiveButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-            falsePositiveButton.setToolTipText("标记为误报");
             
-            // 悬停效果和强制tooltip显示
+            // 误报按钮悬停效果
             falsePositiveButton.addMouseListener(new java.awt.event.MouseAdapter() {
                 @Override
                 public void mouseEntered(java.awt.event.MouseEvent e) {
-                    // 误报按钮始终响应悬停效果
-                    falsePositiveButton.setBackground(new Color(245, 124, 0));
-                    // 强制显示tooltip
-                    ToolTipManager.sharedInstance().setInitialDelay(0);
-                    ToolTipManager.sharedInstance().setDismissDelay(5000);
-                    ToolTipManager.sharedInstance().mouseMoved(e);
+                    if (falsePositiveButton.isEnabled()) {
+                        falsePositiveButton.setBackground(new Color(245, 124, 0));
+                        // 强制显示tooltip
+                        ToolTipManager.sharedInstance().setInitialDelay(0);
+                        ToolTipManager.sharedInstance().setDismissDelay(5000);
+                        ToolTipManager.sharedInstance().mouseMoved(e);
+                    }
                 }
                 @Override
                 public void mouseExited(java.awt.event.MouseEvent e) {
-                    // 误报按钮始终响应悬停效果
-                    falsePositiveButton.setBackground(new Color(255, 152, 0));
+                    if (falsePositiveButton.isEnabled()) {
+                        falsePositiveButton.setBackground(new Color(255, 152, 0));
+                    }
                 }
                 @Override
                 public void mouseMoved(java.awt.event.MouseEvent e) {
@@ -2051,11 +2105,16 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                 }
             });
             
-            // 设置按钮正常状态的样式
-            confirmButton.setBackground(new Color(76, 175, 80)); // Material Design Green
-            confirmButton.setForeground(JBColor.foreground());
-            falsePositiveButton.setBackground(new Color(255, 152, 0));
-            falsePositiveButton.setForeground(JBColor.foreground());
+            // 使用GridBagConstraints将按钮添加到容器中，实现完美居中
+            GridBagConstraints gbc = new GridBagConstraints();
+            gbc.gridx = 0;
+            gbc.gridy = 0;
+            gbc.insets = new Insets(0, 3, 0, 3); // 左右间距
+            panel.add(confirmButton, gbc);
+            
+            gbc.gridx = 1;
+            gbc.insets = new Insets(0, 3, 0, 3); // 左右间距
+            panel.add(falsePositiveButton, gbc);
             
             confirmButton.addActionListener(e -> {
                 LOG.info("=== 确认按钮被点击 ===");
@@ -2071,25 +2130,53 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                 onFeedbackClick("false_positive", editingRow);
                 fireEditingStopped();
             });
-            
-            // 使用GridBagConstraints将按钮添加到容器中，实现完美居中
-            GridBagConstraints gbc = new GridBagConstraints();
-            gbc.gridx = 0;
-            gbc.gridy = 0;
-            gbc.insets = new Insets(0, 3, 0, 3); // 左右间距
-            buttonPanel.add(confirmButton, gbc);
-            
-            gbc.gridx = 1;
-            gbc.insets = new Insets(0, 3, 0, 3); // 左右间距
-            buttonPanel.add(falsePositiveButton, gbc);
-            
-            panel.add(buttonPanel, BorderLayout.CENTER);
         }
         
         @Override
         public Component getTableCellEditorComponent(JTable table, Object value, boolean isSelected,
                                                      int row, int column) {
             editingRow = row;
+            
+            // 获取当前行的反馈状态
+            String feedbackStatus = feedbackStatusMap.get(row);
+            boolean isSubmitting = submittingRows.contains(row);
+            
+            // 更新确认按钮状态
+            if ("confirmed".equals(feedbackStatus)) {
+                confirmButton.setText("已确认");
+                confirmButton.setBackground(new Color(76, 175, 80)); // 绿色
+                confirmButton.setEnabled(false);
+                confirmButton.setPreferredSize(new Dimension(60, 24)); // 增加宽度以容纳"已确认"文本
+            } else if ("false_positive".equals(feedbackStatus)) {
+                confirmButton.setText("确认");
+                confirmButton.setBackground(new Color(158, 158, 158)); // 灰色
+                confirmButton.setEnabled(false);
+                confirmButton.setPreferredSize(new Dimension(50, 24));
+            } else {
+                confirmButton.setText("确认");
+                confirmButton.setBackground(new Color(76, 175, 80)); // Material Design Green
+                confirmButton.setEnabled(!isSubmitting && mqttReceived);
+                confirmButton.setPreferredSize(new Dimension(50, 24));
+            }
+            
+            // 更新误报按钮状态
+            if ("false_positive".equals(feedbackStatus)) {
+                falsePositiveButton.setText("已误报");
+                falsePositiveButton.setBackground(new Color(255, 152, 0)); // 橙色
+                falsePositiveButton.setEnabled(false);
+                falsePositiveButton.setPreferredSize(new Dimension(60, 24)); // 增加宽度以容纳"已误报"文本
+            } else if ("confirmed".equals(feedbackStatus)) {
+                falsePositiveButton.setText("误报");
+                falsePositiveButton.setBackground(new Color(158, 158, 158)); // 灰色
+                falsePositiveButton.setEnabled(false);
+                falsePositiveButton.setPreferredSize(new Dimension(50, 24));
+            } else {
+                falsePositiveButton.setText("误报");
+                falsePositiveButton.setBackground(new Color(255, 152, 0));
+                falsePositiveButton.setEnabled(!isSubmitting && mqttReceived);
+                falsePositiveButton.setPreferredSize(new Dimension(50, 24));
+            }
+            
             return panel;
         }
         
@@ -2107,6 +2194,18 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             // 检查是否可以提交反馈（MQTT消息是否已接收）
             if (!mqttReceived) {
                 LOG.warn("MQTT消息未接收完成，按钮应该是禁用状态");
+                return;
+            }
+            
+            // 检查是否已经提交过反馈
+            if (feedbackStatusMap.containsKey(row)) {
+                LOG.warn("行 " + row + " 已经提交过反馈，状态: " + feedbackStatusMap.get(row));
+                return;
+            }
+            
+            // 检查是否正在提交
+            if (submittingRows.contains(row)) {
+                LOG.warn("行 " + row + " 正在提交反馈，请稍候");
                 return;
             }
             
@@ -2132,6 +2231,10 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             if ("confirmed".equals(feedback)) {
                 // 已确认 - 直接调用反馈接口
                 LOG.info("开始提交确认反馈...");
+                // 标记为正在提交
+                submittingRows.add(row);
+                // 立即更新UI状态
+                resultTable.repaint();
                 submitFeedback(mqttData, "2", "", row);
                 LOG.info("已确认评审意见: " + filePath);
             } else if ("false_positive".equals(feedback)) {
@@ -2293,6 +2396,8 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             // 重置MQTT状态
             mqttReceived = false; // 重置时禁用反馈按钮
             mqttDataMap.clear(); // 清空MQTT数据映射
+            feedbackStatusMap.clear(); // 清空反馈状态映射
+            submittingRows.clear(); // 清空正在提交的行
             updateFeedbackButtonsState(); // 更新按钮状态
             
             // 不显示任何消息，保持评审结果区域完全空白
@@ -2373,6 +2478,24 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
                 JOptionPane.showMessageDialog(dialog, "请填写误报原因！", "提示", JOptionPane.WARNING_MESSAGE);
                 return;
             }
+            
+            // 检查是否已经提交过反馈
+            if (feedbackStatusMap.containsKey(row)) {
+                JOptionPane.showMessageDialog(dialog, "该评审意见已经提交过反馈！", "提示", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            
+            // 检查是否正在提交
+            if (submittingRows.contains(row)) {
+                JOptionPane.showMessageDialog(dialog, "正在提交反馈，请稍候！", "提示", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            
+            // 标记为正在提交
+            submittingRows.add(row);
+            // 立即更新UI状态
+            resultTable.repaint();
+            
             onFalsePositiveSubmit(row, reason);
             dialog.dispose();
         });
@@ -2473,12 +2596,42 @@ public class CodeReviewPanel extends JBPanel<CodeReviewPanel> {
             description,
             success -> {
                 SwingUtilities.invokeLater(() -> {
+                    // 移除正在提交状态
+                    submittingRows.remove(row);
+                    
                     if (success) {
                         LOG.info("反馈提交成功，行号: " + row + ", 状态: " + feedbackStatus);
-                        // 可以在这里更新UI状态，比如禁用按钮或显示已提交状态
+                        
+                        // 更新反馈状态
+                        String statusKey = "2".equals(feedbackStatus) ? "confirmed" : "false_positive";
+                        feedbackStatusMap.put(row, statusKey);
+                        
+                        // 显示成功提示
+                        String message = "2".equals(feedbackStatus) ? "确认成功！" : "误报反馈提交成功！";
+                        JOptionPane.showMessageDialog(
+                            SwingUtilities.getWindowAncestor(resultTable),
+                            message,
+                            "反馈成功",
+                            JOptionPane.INFORMATION_MESSAGE
+                        );
+                        
+                        // 刷新表格显示
+                        resultTable.repaint();
+                        
                     } else {
                         LOG.error("反馈提交失败，行号: " + row + ", 状态: " + feedbackStatus);
-                        // 可以在这里显示错误消息
+                        
+                        // 显示失败提示
+                        String message = "反馈提交失败，请稍后重试！";
+                        JOptionPane.showMessageDialog(
+                            SwingUtilities.getWindowAncestor(resultTable),
+                            message,
+                            "提交失败",
+                            JOptionPane.ERROR_MESSAGE
+                        );
+                        
+                        // 刷新表格显示
+                        resultTable.repaint();
                     }
                 });
             }
