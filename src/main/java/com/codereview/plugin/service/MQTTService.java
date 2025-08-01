@@ -42,6 +42,15 @@ public final class MQTTService {
     private String currentUserSid;
     private final ObjectMapper objectMapper = new ObjectMapper();
     
+    // ✅ 新增：网络重连管理
+    private static final int MAX_RECONNECT_ATTEMPTS = 10; // 最大重连次数
+    private static final long INITIAL_RECONNECT_DELAY = 1000; // 初始重连延迟（1秒）
+    private static final long MAX_RECONNECT_DELAY = 300000; // 最大重连延迟（5分钟）
+    private volatile int reconnectAttempts = 0; // 当前重连次数
+    private volatile long lastReconnectTime = 0; // 上次重连时间
+    private volatile boolean isReconnecting = false; // 是否正在重连
+    private volatile String lastConnectionError = null; // 最后一次连接错误
+    
     // Project级别的回调映射
     private final Map<Project, Map<String, Consumer<String>>> projectCallbacks = new ConcurrentHashMap<>();
     
@@ -102,7 +111,14 @@ public final class MQTTService {
                 public void connectionLost(Throwable cause) {
                     LOG.warn("MQTT连接丢失，原因: " + cause.getMessage(), cause);
                     isConnected = false;
-                    LOG.info("[MQTT] 已触发自动重连机制（Paho自动重连开启，setAutomaticReconnect=true）。请关注后续连接成功或失败日志。");
+                    lastConnectionError = cause.getMessage();
+                    
+                    // ✅ 改进：智能重连策略
+                    if (!isReconnecting) {
+                        handleConnectionLoss(cause);
+                    } else {
+                        LOG.info("[MQTT] 重连已在进行中，跳过本次重连请求");
+                    }
                 }
 
                 @Override
@@ -191,6 +207,9 @@ public final class MQTTService {
             mqttClient.connect(options);
             LOG.info("已连接到 MQTT Broker: " + BROKER);
             LOG.info("[MQTT] 连接建立成功。如果之前有断开，说明自动重连已恢复。");
+            
+            // ✅ 新增：连接成功后重置重连状态
+            resetReconnectState();
 
             // 订阅代码生成主题（保持原有格式）
             String codeGenTopic = TOPIC_PREFIX + userSid;
@@ -371,6 +390,134 @@ public final class MQTTService {
     }
     
     /**
+     * 处理连接丢失事件
+     */
+    private void handleConnectionLoss(Throwable cause) {
+        if (isReconnecting) {
+            LOG.info("[MQTT] 重连已在进行中，跳过本次重连");
+            return;
+        }
+        
+        // 检查重连次数限制
+        if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+            LOG.error("[MQTT] 已达到最大重连次数(" + MAX_RECONNECT_ATTEMPTS + ")，停止重连。请检查网络连接或手动重连。");
+            showNetworkErrorNotification("MQTT连接失败", 
+                "已达到最大重连次数(" + MAX_RECONNECT_ATTEMPTS + ")，请检查网络连接或重新登录。");
+            return;
+        }
+        
+        // 计算指数退避延迟
+        long delay = calculateReconnectDelay();
+        reconnectAttempts++;
+        
+        LOG.info("[MQTT] 开始第" + reconnectAttempts + "次重连，延迟" + delay + "毫秒");
+        
+        // 异步重连
+        new Thread(() -> {
+            try {
+                isReconnecting = true;
+                lastReconnectTime = System.currentTimeMillis();
+                
+                Thread.sleep(delay);
+                
+                if (currentUserSid != null) {
+                    LOG.info("[MQTT] 执行重连操作...");
+                    connectAndSubscribe("reconnect-" + reconnectAttempts, currentUserSid);
+                } else {
+                    LOG.warn("[MQTT] 无法重连：用户SID为空");
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                LOG.info("[MQTT] 重连被中断");
+            } catch (Exception e) {
+                LOG.error("[MQTT] 重连过程中发生错误", e);
+            } finally {
+                isReconnecting = false;
+            }
+        }, "MQTT-Reconnect-" + reconnectAttempts).start();
+    }
+    
+    /**
+     * 计算重连延迟时间（指数退避）
+     */
+    private long calculateReconnectDelay() {
+        if (reconnectAttempts == 0) {
+            return INITIAL_RECONNECT_DELAY;
+        }
+        
+        // 指数退避：1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s, 300s
+        long delay = Math.min(INITIAL_RECONNECT_DELAY * (long)Math.pow(2, reconnectAttempts - 1), MAX_RECONNECT_DELAY);
+        
+        // 添加随机抖动，避免多个客户端同时重连
+        long jitter = (long)(Math.random() * 1000);
+        return delay + jitter;
+    }
+    
+    /**
+     * 显示网络错误通知
+     */
+    private void showNetworkErrorNotification(String title, String message) {
+        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
+            try {
+                javax.swing.JOptionPane.showMessageDialog(
+                    null,
+                    message,
+                    title,
+                    javax.swing.JOptionPane.WARNING_MESSAGE
+                );
+            } catch (Exception e) {
+                LOG.error("显示网络错误通知时出错", e);
+            }
+        });
+    }
+    
+    /**
+     * 重置重连状态（连接成功时调用）
+     */
+    private void resetReconnectState() {
+        reconnectAttempts = 0;
+        lastReconnectTime = 0;
+        isReconnecting = false;
+        lastConnectionError = null;
+        LOG.info("[MQTT] 重连状态已重置");
+    }
+    
+    /**
+     * 手动重连（供用户主动触发）
+     */
+    public void manualReconnect() {
+        if (currentUserSid == null) {
+            LOG.warn("[MQTT] 无法手动重连：用户SID为空");
+            return;
+        }
+        
+        LOG.info("[MQTT] 用户手动触发重连");
+        resetReconnectState(); // 重置重连状态
+        handleConnectionLoss(new Exception("Manual reconnect"));
+    }
+    
+    /**
+     * 获取连接状态信息
+     */
+    public String getConnectionStatusInfo() {
+        StringBuilder info = new StringBuilder();
+        info.append("MQTT连接状态: ").append(isConnected() ? "已连接" : "未连接").append("\n");
+        info.append("重连次数: ").append(reconnectAttempts).append("/").append(MAX_RECONNECT_ATTEMPTS).append("\n");
+        info.append("是否正在重连: ").append(isReconnecting).append("\n");
+        
+        if (lastConnectionError != null) {
+            info.append("最后错误: ").append(lastConnectionError).append("\n");
+        }
+        
+        if (lastReconnectTime > 0) {
+            long timeSinceLastReconnect = System.currentTimeMillis() - lastReconnectTime;
+            info.append("距离上次重连: ").append(timeSinceLastReconnect / 1000).append("秒\n");
+        }
+        
+        return info.toString();
+    }
+    
+    /**
      * 强制清理所有资源（用于插件卸载时）
      */
     public void forceCleanup() {
@@ -417,7 +564,20 @@ public final class MQTTService {
      * 检查是否已连接
      */
     public boolean isConnected() {
-        return isConnected && mqttClient != null && mqttClient.isConnected();
+        boolean connected = isConnected && mqttClient != null && mqttClient.isConnected();
+        
+        // ✅ 改进：如果检测到连接断开，使用智能重连策略
+        if (!connected && currentUserSid != null && !isReconnecting) {
+            LOG.warn("检测到MQTT连接断开，尝试重新连接...");
+            try {
+                // 使用智能重连策略，而不是简单的延迟重连
+                handleConnectionLoss(new Exception("Connection check detected disconnect"));
+            } catch (Exception e) {
+                LOG.error("MQTT重连失败", e);
+            }
+        }
+        
+        return connected;
     }
 
     /**

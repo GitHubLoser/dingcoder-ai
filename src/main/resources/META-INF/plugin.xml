@@ -79,12 +79,20 @@
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </group>
         
-        <!-- Token快速测试Action -->
-        <action id="com.codereview.plugin.action.TokenQuickTestAction"
-                class="com.codereview.plugin.action.TokenQuickTestAction"
-                text="Token快速测试"
-                description="即时测试Token自动刷新功能（模拟即将过期）">
-            <add-to-group group-id="ToolsMenu" anchor="last"/>
-        </action>
+<!--        &lt;!&ndash; Token快速测试Action &ndash;&gt;-->
+<!--        <action id="com.codereview.plugin.action.TokenQuickTestAction"-->
+<!--                class="com.codereview.plugin.action.TokenQuickTestAction"-->
+<!--                text="Token快速测试"-->
+<!--                description="即时测试Token自动刷新功能（模拟即将过期）">-->
+<!--            <add-to-group group-id="ToolsMenu" anchor="last"/>-->
+<!--        </action>-->
+<!--        -->
+<!--        &lt;!&ndash; Token刷新+MQTT重连测试Action &ndash;&gt;-->
+<!--        <action id="com.codereview.plugin.action.TokenRefreshMqttTestAction"-->
+<!--                class="com.codereview.plugin.action.TokenRefreshMqttTestAction"-->
+<!--                text="Token刷新+MQTT重连测试"-->
+<!--                description="测试Token刷新和MQTT重连功能">-->
+<!--            <add-to-group group-id="ToolsMenu" anchor="last"/>-->
+<!--        </action>-->
     </actions>
 </idea-plugin> 

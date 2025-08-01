@@ -53,6 +53,7 @@ public final class AuthService {
     private static volatile String storedPassword = null; // 存储密码用于刷新
     private static volatile AtomicBoolean isRefreshing = new AtomicBoolean(false); // 是否正在刷新token
     private static Timer tokenRefreshTimer = null; // token刷新定时器
+    private static Timer mqttCheckTimer = null; // MQTT连接检查定时器
 
     // 全局登录状态管理
     private static volatile boolean globalLoginState = false;
@@ -208,6 +209,64 @@ public final class AuthService {
     }
     
     /**
+     * 启动MQTT连接检查定时器
+     */
+    private void startMqttCheckTimer() {
+        try {
+            if (mqttCheckTimer != null) {
+                log.info("取消现有MQTT检查定时器");
+                mqttCheckTimer.cancel();
+            }
+            
+            log.info("创建新的MQTT检查定时器");
+            mqttCheckTimer = new Timer("MqttCheckTimer", true);
+            
+            // 每5分钟检查一次MQTT连接状态
+            mqttCheckTimer.scheduleAtFixedRate(new TimerTask() {
+                @Override
+                public void run() {
+                    try {
+                        log.debug("MQTT检查定时器触发 - 开始检查连接状态");
+                        checkAndReconnectMqtt();
+                    } catch (Exception e) {
+                        log.error("MQTT连接检查时发生错误", e);
+                    }
+                }
+            }, 5 * 60 * 1000, 5 * 60 * 1000); // 5分钟后开始，每5分钟检查一次
+            
+            log.info("MQTT连接检查定时器已启动，检查间隔: 5分钟");
+        } catch (Exception e) {
+            log.error("启动MQTT连接检查定时器时发生错误", e);
+        }
+    }
+    
+    /**
+     * 检查并重连MQTT
+     */
+    private void checkAndReconnectMqtt() {
+        // 如果没有登录，不需要检查MQTT
+        if (!isLoggedIn()) {
+            log.debug("用户未登录，跳过MQTT连接检查");
+            return;
+        }
+        
+        try {
+            MQTTService mqttService = MQTTService.getInstance();
+            if (mqttService != null) {
+                boolean isConnected = mqttService.isConnected();
+                log.debug("MQTT连接状态检查 - 是否连接: {}", isConnected);
+                
+                if (!isConnected && storedUsername != null && globalUserSid != null) {
+                    log.info("检测到MQTT连接断开，尝试重新连接...");
+                    startMqttConnection(storedUsername, globalUserSid);
+                }
+            }
+        } catch (Exception e) {
+            log.error("MQTT连接检查过程中发生错误", e);
+        }
+    }
+    
+    /**
      * 计算下次检查的延迟时间
      */
     private long calculateNextCheckDelay() {
@@ -271,6 +330,15 @@ public final class AuthService {
                     
                     if (loginResult != null && loginResult.get(CommonConstant.TOKEN) != null) {
                         log.info("Token刷新成功");
+                        
+                        // ✅ 新增：Token刷新成功后，自动重连MQTT
+                        String userSid = String.valueOf(loginResult.get(CommonConstant.SID));
+                        if (userSid != null && !userSid.equals("null")) {
+                            log.info("Token刷新成功，开始重连MQTT，用户SID: {}", userSid);
+                            startMqttConnection(storedUsername, userSid);
+                        } else {
+                            log.warn("Token刷新成功，但获取用户SID失败，跳过MQTT重连");
+                        }
                     } else {
                         log.error("Token刷新失败");
                     }
@@ -565,6 +633,11 @@ public final class AuthService {
                     startTokenRefreshTimer();
                     log.info("token自动刷新定时器启动完成");
                     
+                    // ✅ 新增：启动MQTT连接检查定时器
+                    log.info("准备启动MQTT连接检查定时器");
+                    startMqttCheckTimer();
+                    log.info("MQTT连接检查定时器启动完成");
+                    
                     retrunMap.put(CommonConstant.TOKEN, token);
                     retrunMap.put(CommonConstant.USER_SID, resultMap.get(CommonConstant.SID));
                     
@@ -754,6 +827,13 @@ public final class AuthService {
             tokenRefreshTimer.cancel();
             tokenRefreshTimer = null;
             log.info("Token刷新定时器已停止");
+        }
+        
+        // ✅ 新增：停止MQTT检查定时器
+        if (mqttCheckTimer != null) {
+            mqttCheckTimer.cancel();
+            mqttCheckTimer = null;
+            log.info("MQTT检查定时器已停止");
         }
         
         // 清除token管理相关状态

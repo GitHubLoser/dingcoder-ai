@@ -214,4 +214,80 @@ public class TokenQuickTestUtils {
         
         return report.toString();
     }
+    
+    /**
+     * 测试Token刷新和MQTT重连
+     */
+    public static void testTokenRefreshAndMqttReconnect() {
+        LOG.info("=== 开始Token刷新和MQTT重连测试 ===");
+        
+        AuthService authService = AuthService.getInstance();
+        
+        // 1. 检查当前状态
+        LOG.info("1. 检查当前状态");
+        boolean isLoggedIn = authService.isLoggedIn();
+        LOG.info("登录状态: " + (isLoggedIn ? "已登录" : "未登录"));
+        
+        if (!isLoggedIn) {
+            LOG.warn("用户未登录，无法进行测试");
+            return;
+        }
+        
+        // 2. 获取MQTT服务状态
+        LOG.info("2. 获取MQTT服务状态");
+        try {
+            com.codereview.plugin.service.MQTTService mqttService = com.codereview.plugin.service.MQTTService.getInstance();
+            boolean mqttConnected = mqttService.isConnected();
+            LOG.info("MQTT连接状态: " + (mqttConnected ? "已连接" : "未连接"));
+            
+            if (mqttConnected) {
+                String mqttStatus = mqttService.getConnectionStatusInfo();
+                LOG.info("MQTT状态详情:\n" + mqttStatus);
+            }
+        } catch (Exception e) {
+            LOG.error("获取MQTT状态失败", e);
+        }
+        
+        // 3. 模拟Token即将过期
+        LOG.info("3. 模拟Token即将过期");
+        simulateTokenExpiringSoon();
+        
+        // 4. 触发Token刷新
+        LOG.info("4. 触发Token刷新");
+        authService.forceRefreshToken();
+        
+        // 5. 等待刷新完成
+        LOG.info("5. 等待刷新完成（10秒）");
+        try {
+            Thread.sleep(10000); // 等待10秒，确保刷新和重连完成
+        } catch (InterruptedException e) {
+            LOG.error("等待刷新时被中断", e);
+        }
+        
+        // 6. 检查刷新结果
+        LOG.info("6. 检查刷新结果");
+        double newRemainingMinutes = authService.getTokenRemainingMinutes();
+        LOG.info("刷新后Token剩余时间: " + String.format("%.2f", newRemainingMinutes) + " 分钟");
+        
+        // 7. 检查MQTT重连结果
+        LOG.info("7. 检查MQTT重连结果");
+        try {
+            com.codereview.plugin.service.MQTTService mqttService = com.codereview.plugin.service.MQTTService.getInstance();
+            boolean mqttConnected = mqttService.isConnected();
+            LOG.info("刷新后MQTT连接状态: " + (mqttConnected ? "已连接" : "未连接"));
+            
+            if (mqttConnected) {
+                String mqttStatus = mqttService.getConnectionStatusInfo();
+                LOG.info("刷新后MQTT状态详情:\n" + mqttStatus);
+            }
+        } catch (Exception e) {
+            LOG.error("检查MQTT状态失败", e);
+        }
+        
+        // 8. 恢复原始状态
+        LOG.info("8. 恢复原始状态");
+        restoreOriginalTokenState();
+        
+        LOG.info("=== Token刷新和MQTT重连测试完成 ===");
+    }
 } 
