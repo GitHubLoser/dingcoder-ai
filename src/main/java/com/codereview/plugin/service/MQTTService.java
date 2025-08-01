@@ -86,8 +86,21 @@ public final class MQTTService {
     public void connectAndSubscribe(String userId, String userSid) {
         this.currentUserSid = userSid;
 
+        // ✅ 新增：确保只有一个活跃连接
+        if (mqttClient != null && mqttClient.isConnected()) {
+            LOG.info("检测到已有MQTT连接，先断开现有连接");
+            try {
+                mqttClient.disconnect();
+                mqttClient.close();
+            } catch (Exception e) {
+                LOG.warn("断开现有MQTT连接时出错", e);
+            }
+            mqttClient = null;
+        }
+
         try {
-            String clientId = "ai-code-assistant-" + userId + "-" + System.currentTimeMillis();
+            // ✅ 优化：使用更稳定的客户端ID，避免重复连接
+            String clientId = "ai-code-assistant-" + userId + "-global";
 
             LOG.info("开始连接MQTT Broker: " + BROKER);
             LOG.info("用户SID: " + userSid);
@@ -564,7 +577,7 @@ public final class MQTTService {
      * 检查是否已连接
      */
     public boolean isConnected() {
-        boolean connected = isConnected && mqttClient != null && mqttClient.isConnected();
+        boolean connected = this.isConnected && mqttClient != null && mqttClient.isConnected();
         
         // ✅ 改进：如果检测到连接断开，使用智能重连策略
         if (!connected && currentUserSid != null && !isReconnecting) {
@@ -604,6 +617,14 @@ public final class MQTTService {
      */
     public Consumer<String> getMessageCallback(String functionType) {
         return topicCallbacks.get(functionType);
+    }
+    
+    /**
+     * 获取指定Project和功能类型的回调函数
+     */
+    public Consumer<String> getMessageCallback(String functionType, Project project) {
+        Map<String, Consumer<String>> callbacks = projectCallbacks.get(project);
+        return callbacks != null ? callbacks.get(functionType) : null;
     }
 
     /**

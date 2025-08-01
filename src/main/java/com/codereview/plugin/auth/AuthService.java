@@ -346,8 +346,15 @@ public final class AuthService {
                         LOG.info("从loginResult获取的userSid: '" + userSid + "'");
                         
                         if (userSid != null && !userSid.equals("null") && !userSid.trim().isEmpty()) {
-                            LOG.info("Token刷新成功，开始重连MQTT，用户SID: " + userSid);
-                            startMqttConnection(storedUsername, userSid);
+                            LOG.info("Token刷新成功，检查全局MQTT连接状态");
+                            // ✅ 改进：统一使用全局MQTTService，确保只有一个连接
+                            MQTTService mqttService = MQTTService.getInstance();
+                            if (!mqttService.isConnected()) {
+                                LOG.info("Token刷新成功，但全局MQTT未连接，开始重连MQTT，用户SID: " + userSid);
+                                startMqttConnection(storedUsername, userSid);
+                            } else {
+                                LOG.info("Token刷新成功，全局MQTT已连接，无需重连");
+                            }
                         } else {
                             LOG.warn("Token刷新成功，但获取用户SID失败，跳过MQTT重连。userSid: '" + userSid + "'");
                         }
@@ -966,14 +973,13 @@ public final class AuthService {
                     Consumer<String> existingCodeGenCallback = mqttService.getMessageCallback(MQTTService.FUNCTION_CODE_GENERATION);
                     Consumer<String> existingCodeReviewCallback = mqttService.getMessageCallback(MQTTService.FUNCTION_CODE_REVIEW);
                     
-                    // 如果已经连接，先断开
-                    if (mqttService.isConnected()) {
-                        LOG.info("检测到已存在的MQTT连接，先断开");
-                        mqttService.disconnect();
+                    // ✅ 改进：统一使用全局MQTTService，确保只有一个连接
+                    if (!mqttService.isConnected()) {
+                        LOG.info("全局MQTT未连接，开始建立连接");
+                        mqttService.connectAndSubscribe(username, userSid);
+                    } else {
+                        LOG.info("全局MQTT已连接，跳过重连");
                     }
-                    
-                    // 重新连接并订阅多个topic
-                    mqttService.connectAndSubscribe(username, userSid);
                     
                     // 恢复回调函数
                     if (existingCodeGenCallback != null) {

@@ -31,6 +31,7 @@ import java.util.HashMap;
 import java.util.Properties;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
+
 import java.io.InputStream;
 import javax.swing.JOptionPane;
 import java.io.InputStreamReader;
@@ -76,6 +77,8 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
 
     // 消息列表
     private final List<ChatMessage> chatMessages = new ArrayList<>();
+    
+
 
     // 发送按钮状态管理
     private boolean isWaitingForGeneration = false;
@@ -103,6 +106,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         super(new BorderLayout());
         this.project = project;
         this.authService = AuthService.getInstance();
+        // ✅ 统一使用全局MQTTService实例，确保所有Project共享一个连接
         this.mqttService = MQTTService.getInstance();
         this.validateSpecService = new ValidateSpecService();
         projectInstances.put(project, this);
@@ -737,10 +741,45 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             bubble.setBackground(USER_BUBBLE_COLOR);
             bubble.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
             bubble.setLayout(new BoxLayout(bubble, BoxLayout.X_AXIS));
-            JLabel label = new JLabel("<html>" + content.replace("\n", "<br>") + "</html>");
-            label.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
-            label.setForeground(new JBColor(new Color(31, 35, 40), new Color(230, 237, 243)));
-            bubble.add(label);
+            
+            // ✅ 使用JTextArea替代JLabel，支持文本选择和复制
+            JTextArea textArea = new JTextArea(content);
+            textArea.setEditable(false);
+            textArea.setLineWrap(true);
+            textArea.setWrapStyleWord(true);
+            textArea.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
+            textArea.setForeground(new JBColor(new Color(31, 35, 40), new Color(230, 237, 243)));
+            textArea.setBackground(USER_BUBBLE_COLOR);
+            textArea.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
+            textArea.setCaretColor(new JBColor(new Color(31, 35, 40), new Color(230, 237, 243)));
+            
+            // ✅ 添加右键菜单
+            textArea.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseClicked(MouseEvent e) {
+                    if (e.getButton() == MouseEvent.BUTTON3) { // 右键点击
+                        showUserMessageContextMenu(e, content);
+                    }
+                }
+            });
+            
+            // ✅ 添加键盘快捷键支持
+            textArea.getInputMap().put(KeyStroke.getKeyStroke(KeyEvent.VK_C, Toolkit.getDefaultToolkit().getMenuShortcutKeyMask()), "copy");
+            textArea.getActionMap().put("copy", new AbstractAction() {
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    String selectedText = textArea.getSelectedText();
+                    if (selectedText != null && !selectedText.isEmpty()) {
+                        copyToClipboard(selectedText);
+                    } else {
+                        copyToClipboard(content); // 如果没有选中文本，复制全部内容
+                    }
+                }
+            });
+            
+            textArea.setCursor(Cursor.getPredefinedCursor(Cursor.TEXT_CURSOR));
+            
+            bubble.add(textArea);
             outerPanel.add(bubble);
             return outerPanel;
         }
@@ -1288,6 +1327,23 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         } catch (Exception e) {
             LOG.error("复制到剪贴板失败", e);
         }
+    }
+
+    /**
+     * 显示用户消息的右键菜单
+     */
+    private void showUserMessageContextMenu(MouseEvent e, String content) {
+        JPopupMenu popup = new JPopupMenu();
+
+        // 复制消息内容菜单项
+        JMenuItem copyItem = new JMenuItem("复制消息");
+        copyItem.addActionListener(evt -> {
+            copyToClipboard(content);
+        });
+        popup.add(copyItem);
+
+        // 显示菜单
+        popup.show((Component) e.getSource(), e.getX(), e.getY());
     }
 
     /**
@@ -2058,7 +2114,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
     // 新增方法：确保code_generation回调已注册
     public void ensureCodeGenerationMqttCallback() {
         if (mqttService != null && mqttService.isConnected()) {
-            Consumer<String> currentCallback = mqttService.getMessageCallback(MQTTService.FUNCTION_CODE_GENERATION);
+            Consumer<String> currentCallback = mqttService.getMessageCallback(MQTTService.FUNCTION_CODE_GENERATION, project);
             if (currentCallback == null) {
                 LOG.info("检测到code_generation回调未设置，重新设置");
                 mqttService.setMessageCallback(MQTTService.FUNCTION_CODE_GENERATION, this::onMQTTMessage, project);
@@ -2398,6 +2454,8 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             return String.valueOf(content.hashCode());
         }
     }
+    
+
 
     // 存储消息面板的映射关系，用于快速定位和更新
     private final Map<String, JPanel> messagePanelMap = new HashMap<>();
