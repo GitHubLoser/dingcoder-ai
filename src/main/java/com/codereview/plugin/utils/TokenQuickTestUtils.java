@@ -4,7 +4,6 @@ import com.codereview.plugin.auth.AuthService;
 import com.intellij.openapi.diagnostic.Logger;
 
 import java.lang.reflect.Field;
-import java.util.Map;
 
 /**
  * Token快速测试工具类
@@ -90,6 +89,25 @@ public class TokenQuickTestUtils {
             long expireTime = currentTime + (1 * 60 * 1000); // 1分钟后过期
             tokenExpireTimeField.set(null, expireTime);
             
+            // ✅ 新增：确保设置存储的用户名和密码，以便refreshTokenAsync能正常工作
+            Field storedUsernameField = AuthService.class.getDeclaredField("storedUsername");
+            storedUsernameField.setAccessible(true);
+            Field storedPasswordField = AuthService.class.getDeclaredField("storedPassword");
+            storedPasswordField.setAccessible(true);
+            
+            // 如果存储的用户名和密码为空，设置一个测试值
+            String currentStoredUsername = (String) storedUsernameField.get(null);
+            String currentStoredPassword = (String) storedPasswordField.get(null);
+            
+            if (currentStoredUsername == null || currentStoredPassword == null) {
+                LOG.info("检测到storedUsername或storedPassword为空，设置测试值");
+                storedUsernameField.set(null, "test_user");
+                storedPasswordField.set(null, "test_password");
+                LOG.info("已设置测试用户名和密码");
+            } else {
+                LOG.info("storedUsername和storedPassword已存在，无需设置");
+            }
+            
             LOG.info("已模拟Token在1分钟后过期");
             
         } catch (Exception e) {
@@ -117,84 +135,7 @@ public class TokenQuickTestUtils {
             LOG.error("恢复Token状态失败", e);
         }
     }
-    
-    /**
-     * 测试强制刷新功能
-     */
-    public static void testForceRefresh() {
-        LOG.info("=== 开始强制刷新测试 ===");
-        
-        AuthService authService = AuthService.getInstance();
-        
-        if (!authService.isLoggedIn()) {
-            LOG.warn("用户未登录，无法测试强制刷新");
-            return;
-        }
-        
-        // 记录刷新前状态
-        double beforeRemainingMinutes = authService.getTokenRemainingMinutes();
-        LOG.info("刷新前Token剩余时间: " + String.format("%.2f", beforeRemainingMinutes) + " 分钟");
-        
-        // 执行强制刷新
-        LOG.info("执行强制刷新...");
-        authService.forceRefreshToken();
-        
-        // 等待刷新完成
-        try {
-            Thread.sleep(3000);
-        } catch (InterruptedException e) {
-            LOG.error("等待刷新时被中断", e);
-        }
-        
-        // 检查刷新结果
-        double afterRemainingMinutes = authService.getTokenRemainingMinutes();
-        LOG.info("刷新后Token剩余时间: " + String.format("%.2f", afterRemainingMinutes) + " 分钟");
-        
-        if (afterRemainingMinutes > beforeRemainingMinutes) {
-            LOG.info("✅ 强制刷新成功");
-        } else {
-            LOG.warn("⚠️ 强制刷新可能失败");
-        }
-        
-        LOG.info("=== 强制刷新测试完成 ===");
-    }
-    
-    /**
-     * 测试登录功能
-     */
-    public static void testLogin() {
-        LOG.info("=== 开始登录测试 ===");
-        
-        AuthService authService = AuthService.getInstance();
-        
-        // 使用测试账号登录
-        String testUsername = "test_user";
-        String testPassword = "test_password";
-        
-        LOG.info("尝试登录，用户名: " + testUsername);
-        
-        Map<String, Object> loginResult = authService.login(testUsername, testPassword);
-        
-        if (loginResult != null && loginResult.get("token") != null) {
-            LOG.info("✅ 登录成功");
-            String token = String.valueOf(loginResult.get("token"));
-            LOG.info("Token: " + token.substring(0, Math.min(token.length(), 10)) + "...");
-            LOG.info("UserSid: " + loginResult.get("userSid"));
-            
-            // 检查登录状态
-            boolean isLoggedIn = authService.isLoggedIn();
-            LOG.info("登录状态验证: " + (isLoggedIn ? "✅ 已登录" : "❌ 未登录"));
-            
-            // 获取Token状态
-            double remainingMinutes = authService.getTokenRemainingMinutes();
-            LOG.info("Token剩余时间: " + String.format("%.2f", remainingMinutes) + " 分钟");
-            
-        } else {
-            LOG.error("❌ 登录失败");
-        }
-        
-        LOG.info("=== 登录测试完成 ===");
-    }
+
     
     /**
      * 获取完整的测试报告
@@ -254,7 +195,9 @@ public class TokenQuickTestUtils {
         
         // 4. 触发Token刷新
         LOG.info("4. 触发Token刷新");
+        LOG.info("调用forceRefreshToken()...");
         authService.forceRefreshToken();
+        LOG.info("forceRefreshToken()调用完成");
         
         // 5. 等待刷新完成
         LOG.info("5. 等待刷新完成（10秒）");

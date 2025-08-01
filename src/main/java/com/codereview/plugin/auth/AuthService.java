@@ -6,10 +6,9 @@ import com.codereview.plugin.service.ReviewService;
 import com.codereview.plugin.utils.AESUtils;
 import com.codereview.plugin.utils.RSAUtils;
 import com.intellij.openapi.components.Service;
+import com.intellij.openapi.diagnostic.Logger;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.lang3.StringUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.http.*;
 import org.springframework.web.client.RestTemplate;
 
@@ -32,7 +31,8 @@ import com.intellij.openapi.project.Project;
  */
 @Service
 public final class AuthService {
-    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
+    private static final Logger LOG = Logger.getInstance(AuthService.class);
+    
 
     private  static final String iamApToken = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpZCI6IkFHVCIsInNpZCI6MH0.Jls5ewe6aJOI2yBlXTdmWpqCeYENWFbsiM6F8T_tVzQ";
 
@@ -145,7 +145,7 @@ public final class AuthService {
         boolean isExpiringSoon = timeUntilExpire <= refreshThreshold;
         
         if (isExpiringSoon) {
-            log.info("Token即将过期，剩余时间: {} 分钟", String.format("%.2f", (double)timeUntilExpire / (60 * 1000)));
+            LOG.info("Token即将过期，剩余时间: " + String.format("%.2f", (double)timeUntilExpire / (60 * 1000)) + " 分钟");
         }
         
         return isExpiringSoon;
@@ -165,7 +165,7 @@ public final class AuthService {
         boolean isExpired = currentTime >= expireTime;
         
         if (isExpired) {
-            log.warn("Token已过期，过期时间: {}", new java.util.Date(expireTime));
+            LOG.warn("Token已过期，过期时间: " + new java.util.Date(expireTime));
         }
         
         return isExpired;
@@ -176,35 +176,35 @@ public final class AuthService {
      */
     private void startTokenRefreshTimer() {
         try {
-            log.info("开始启动token自动刷新定时器");
+            LOG.info("开始启动token自动刷新定时器");
             
             if (tokenRefreshTimer != null) {
-                log.info("取消现有定时器");
+                LOG.info("取消现有定时器");
                 tokenRefreshTimer.cancel();
             }
             
-            log.info("创建新的定时器");
+            LOG.info("创建新的定时器");
             tokenRefreshTimer = new Timer("TokenRefreshTimer", true);
             
             // 动态调整检查频率：根据token剩余时间
             long initialDelay = calculateNextCheckDelay();
-            log.info("设置定时器任务，初始延迟: {} 毫秒，后续间隔: {} 毫秒", initialDelay, TOKEN_CHECK_INTERVAL_MS);
+            LOG.info("设置定时器任务，初始延迟: " + initialDelay + " 毫秒，后续间隔: " + TOKEN_CHECK_INTERVAL_MS + " 毫秒");
             
             tokenRefreshTimer.scheduleAtFixedRate(new TimerTask() {
                 @Override
                 public void run() {
                     try {
-                        log.debug("定时器触发 - 开始检查token状态");
+                        LOG.debug("定时器触发 - 开始检查token状态");
                         checkAndRefreshToken();
                     } catch (Exception e) {
-                        log.error("Token刷新检查时发生错误", e);
+                        LOG.error("Token刷新检查时发生错误", e);
                     }
                 }
             }, initialDelay, TOKEN_CHECK_INTERVAL_MS);
             
-            log.info("Token自动刷新定时器已启动，检查间隔: {} 毫秒", TOKEN_CHECK_INTERVAL_MS);
+            LOG.info("Token自动刷新定时器已启动，检查间隔: " + TOKEN_CHECK_INTERVAL_MS + " 毫秒");
         } catch (Exception e) {
-            log.error("启动token自动刷新定时器时发生错误", e);
+            LOG.error("启动token自动刷新定时器时发生错误", e);
         }
     }
     
@@ -214,11 +214,11 @@ public final class AuthService {
     private void startMqttCheckTimer() {
         try {
             if (mqttCheckTimer != null) {
-                log.info("取消现有MQTT检查定时器");
+                LOG.info("取消现有MQTT检查定时器");
                 mqttCheckTimer.cancel();
             }
             
-            log.info("创建新的MQTT检查定时器");
+            LOG.info("创建新的MQTT检查定时器");
             mqttCheckTimer = new Timer("MqttCheckTimer", true);
             
             // 每5分钟检查一次MQTT连接状态
@@ -226,17 +226,17 @@ public final class AuthService {
                 @Override
                 public void run() {
                     try {
-                        log.debug("MQTT检查定时器触发 - 开始检查连接状态");
+                        LOG.debug("MQTT检查定时器触发 - 开始检查连接状态");
                         checkAndReconnectMqtt();
                     } catch (Exception e) {
-                        log.error("MQTT连接检查时发生错误", e);
+                        LOG.error("MQTT连接检查时发生错误", e);
                     }
                 }
             }, 5 * 60 * 1000, 5 * 60 * 1000); // 5分钟后开始，每5分钟检查一次
             
-            log.info("MQTT连接检查定时器已启动，检查间隔: 5分钟");
+            LOG.info("MQTT连接检查定时器已启动，检查间隔: 5分钟");
         } catch (Exception e) {
-            log.error("启动MQTT连接检查定时器时发生错误", e);
+            LOG.error("启动MQTT连接检查定时器时发生错误", e);
         }
     }
     
@@ -246,7 +246,7 @@ public final class AuthService {
     private void checkAndReconnectMqtt() {
         // 如果没有登录，不需要检查MQTT
         if (!isLoggedIn()) {
-            log.debug("用户未登录，跳过MQTT连接检查");
+            LOG.debug("用户未登录，跳过MQTT连接检查");
             return;
         }
         
@@ -254,15 +254,15 @@ public final class AuthService {
             MQTTService mqttService = MQTTService.getInstance();
             if (mqttService != null) {
                 boolean isConnected = mqttService.isConnected();
-                log.debug("MQTT连接状态检查 - 是否连接: {}", isConnected);
+                LOG.debug("MQTT连接状态检查 - 是否连接: {}", isConnected);
                 
                 if (!isConnected && storedUsername != null && globalUserSid != null) {
-                    log.info("检测到MQTT连接断开，尝试重新连接...");
+                    LOG.info("检测到MQTT连接断开，尝试重新连接...");
                     startMqttConnection(storedUsername, globalUserSid);
                 }
             }
         } catch (Exception e) {
-            log.error("MQTT连接检查过程中发生错误", e);
+            LOG.error("MQTT连接检查过程中发生错误", e);
         }
     }
     
@@ -292,21 +292,21 @@ public final class AuthService {
     private void checkAndRefreshToken() {
         // 如果没有登录，不需要刷新
         if (!isLoggedIn()) {
-            log.debug("用户未登录，跳过token检查");
+            LOG.debug("用户未登录，跳过token检查");
             return;
         }
         
         // 记录当前token状态
         double remainingMinutes = getTokenRemainingMinutes();
         boolean isExpiringSoon = isTokenExpiringSoon();
-        log.debug("Token检查 - 剩余时间: {} 分钟, 是否即将过期: {}", String.format("%.2f", remainingMinutes), isExpiringSoon);
+        LOG.debug("Token检查 - 剩余时间: {} 分钟, 是否即将过期: {}", String.format("%.2f", remainingMinutes), isExpiringSoon);
         
         // 如果token即将过期，尝试刷新
         if (isExpiringSoon && !isRefreshing.get()) {
-            log.info("检测到token即将过期，开始自动刷新");
+            LOG.info("检测到token即将过期，开始自动刷新");
             refreshTokenAsync();
         } else if (isExpiringSoon) {
-            log.debug("Token即将过期，但刷新已在进行中");
+            LOG.debug("Token即将过期，但刷新已在进行中");
         }
     }
 
@@ -314,14 +314,23 @@ public final class AuthService {
      * 异步刷新token
      */
     private void refreshTokenAsync() {
-        if (isRefreshing.compareAndSet(false, true)) {
+        LOG.info("refreshTokenAsync被调用，当前isRefreshing状态: " + isRefreshing.get());
+        
+        boolean compareResult = isRefreshing.compareAndSet(false, true);
+        LOG.info("compareAndSet结果: " + compareResult);
+        
+        if (compareResult) {
+            LOG.info("成功设置isRefreshing为true，开始执行刷新逻辑");
             Thread refreshThread = new Thread(() -> {
                 try {
-                    log.info("开始异步刷新token");
+                    LOG.info("开始异步刷新token");
                     
                     // 检查是否有存储的用户名和密码
+                    LOG.info("检查storedUsername: " + storedUsername);
+                    LOG.info("检查storedPassword: " + (storedPassword != null ? "已设置" : "未设置"));
+                    
                     if (storedUsername == null || storedPassword == null) {
-                        log.warn("无法刷新token：未存储用户名或密码");
+                        LOG.warn("无法刷新token：未存储用户名或密码");
                         return;
                     }
                     
@@ -329,21 +338,24 @@ public final class AuthService {
                     Map<String, Object> loginResult = performLoginWithoutTimer(storedUsername, storedPassword);
                     
                     if (loginResult != null && loginResult.get(CommonConstant.TOKEN) != null) {
-                        log.info("Token刷新成功");
+                        LOG.info("Token刷新成功");
                         
-                        // ✅ 新增：Token刷新成功后，自动重连MQTT
-                        String userSid = String.valueOf(loginResult.get(CommonConstant.SID));
-                        if (userSid != null && !userSid.equals("null")) {
-                            log.info("Token刷新成功，开始重连MQTT，用户SID: {}", userSid);
+                        // ✅ 改进：Token刷新成功后，自动重连MQTT
+                        LOG.info("检查loginResult内容: " + loginResult);
+                        String userSid = String.valueOf(loginResult.get(CommonConstant.USER_SID));
+                        LOG.info("从loginResult获取的userSid: '" + userSid + "'");
+                        
+                        if (userSid != null && !userSid.equals("null") && !userSid.trim().isEmpty()) {
+                            LOG.info("Token刷新成功，开始重连MQTT，用户SID: " + userSid);
                             startMqttConnection(storedUsername, userSid);
                         } else {
-                            log.warn("Token刷新成功，但获取用户SID失败，跳过MQTT重连");
+                            LOG.warn("Token刷新成功，但获取用户SID失败，跳过MQTT重连。userSid: '" + userSid + "'");
                         }
                     } else {
-                        log.error("Token刷新失败");
+                        LOG.error("Token刷新失败，loginResult: " + loginResult);
                     }
                 } catch (Exception e) {
-                    log.error("Token刷新过程中发生错误", e);
+                    LOG.error("Token刷新过程中发生错误", e);
                 } finally {
                     isRefreshing.set(false);
                 }
@@ -352,7 +364,7 @@ public final class AuthService {
             refreshThread.setDaemon(true);
             refreshThread.start();
         } else {
-            log.info("Token刷新已在进行中，跳过本次刷新");
+            LOG.info("Token刷新已在进行中，跳过本次刷新。当前isRefreshing状态: " + isRefreshing.get());
         }
     }
 
@@ -366,8 +378,7 @@ public final class AuthService {
         
         tokenExpireTime = expireTime;
         
-        log.info("Token过期时间已设置: {} ({}分钟后过期)", 
-                new java.util.Date(expireTime), expireMinutes);
+        LOG.info("Token过期时间已设置: " + new java.util.Date(expireTime) + " (" + expireMinutes + "分钟后过期)");
     }
 
     /**
@@ -389,15 +400,38 @@ public final class AuthService {
      * 强制刷新token（供测试使用）
      */
     public void forceRefreshToken() {
-        log.info("强制刷新token");
-        refreshTokenAsync();
+        LOG.info("强制刷新token - 开始");
+        LOG.info("强制刷新token - 调用refreshTokenAsync");
+        
+        // 先测试一个简单的日志输出
+        LOG.info("强制刷新token - 测试日志输出1");
+        System.out.println("强制刷新token - System.out测试");
+        
+        try {
+            // 直接测试方法调用
+            LOG.info("强制刷新token - 准备调用refreshTokenAsync");
+            
+            // 先测试一个简单的日志输出
+            LOG.info("强制刷新token - 测试日志输出2");
+            
+            // 尝试调用方法
+            this.refreshTokenAsync();
+            LOG.info("强制刷新token - refreshTokenAsync调用完成");
+        } catch (Exception e) {
+            LOG.error("强制刷新token - refreshTokenAsync调用异常", e);
+            e.printStackTrace(); // 打印完整堆栈
+        } catch (Throwable t) {
+            LOG.error("强制刷新token - refreshTokenAsync调用严重异常", t);
+            t.printStackTrace(); // 打印完整堆栈
+        }
+        LOG.info("强制刷新token - 完成");
     }
     
     /**
      * 手动触发token检查（供测试使用）
      */
     public void manualCheckToken() {
-        log.info("手动触发token检查");
+        LOG.info("手动触发token检查");
         checkAndRefreshToken();
     }
     
@@ -430,7 +464,7 @@ public final class AuthService {
         Map<String, Object> retrunMap = new HashMap<>();
 
         try {
-            log.info("开始刷新登录，用户名: {}", username);
+            LOG.info("开始刷新登录，用户名: " + username);
             
             //1.客户端生成公私钥
             HashMap<String, String> keyMap = getKeyPairMap();
@@ -441,7 +475,7 @@ public final class AuthService {
                 //2.获取服务端公钥
                 String serverPublicKey = getServerPublicKey();
                 if (StringUtils.isEmpty(serverPublicKey)) {
-                    log.error("获取服务端公钥失败");
+                    LOG.error("获取服务端公钥失败");
                     return retrunMap;
                 }
                 
@@ -450,7 +484,7 @@ public final class AuthService {
                 //4.获取加密后的AES的key值
                 String encryptAesKey = getAesPublicKey(encryptPublicKey);
                 if (StringUtils.isEmpty(encryptAesKey)) {
-                    log.error("获取AES密钥失败");
+                    LOG.error("获取AES密钥失败");
                     return retrunMap;
                 }
                 
@@ -504,20 +538,18 @@ public final class AuthService {
                     retrunMap.put(CommonConstant.TOKEN, token);
                     retrunMap.put(CommonConstant.USER_SID, resultMap.get(CommonConstant.SID));
                     
-                    log.info("Token刷新登录成功，用户: {}, Token: {}, UserSid: {}, 剩余有效时间: {} 分钟", 
-                            username, token.substring(0, Math.min(token.length(), 10)) + "...", 
-                            this.userSid, getTokenRemainingMinutes());
+                            LOG.info("Token刷新登录成功，用户: " + username + ", Token: " + token.substring(0, Math.min(token.length(), 10)) + "..., UserSid: " + this.userSid + ", 剩余有效时间: " + getTokenRemainingMinutes() + " 分钟");
                     
                     return retrunMap;
                 } else {
-                    log.warn("Token刷新登录失败，服务器响应: {}", resultMap);
+                    LOG.warn("Token刷新登录失败，服务器响应: " + resultMap);
                 }
             } else {
-                log.error("客户端公私钥生成失败");
+                LOG.error("客户端公私钥生成失败");
             }
         } catch (Exception ex) {
             String message = ex.getMessage();
-            log.error("Token刷新登录失败，异常信息: {}", message, ex);
+            LOG.error("Token刷新登录失败，异常信息: " + message, ex);
             return new HashMap<>();
         }
 
@@ -533,7 +565,7 @@ public final class AuthService {
         Map<String, Object> retrunMap = new HashMap<>();
 
         try {
-            log.info("开始登录，用户名: {}", username);
+            LOG.info("开始登录，用户名: " + username);
             
             // 调试：开始登录
 //            javax.swing.JOptionPane.showMessageDialog(null, "步骤1: 开始登录，用户名: " + username, "登录调试", javax.swing.JOptionPane.INFORMATION_MESSAGE);
@@ -550,7 +582,7 @@ public final class AuthService {
                 //2.获取服务端公钥
                 String serverPublicKey = getServerPublicKey();
                 if (StringUtils.isEmpty(serverPublicKey)) {
-                    log.error("获取服务端公钥失败");
+                    LOG.error("获取服务端公钥失败");
 //                    javax.swing.JOptionPane.showMessageDialog(null, "步骤3: 获取服务端公钥失败", "登录调试", javax.swing.JOptionPane.ERROR_MESSAGE);
                     return retrunMap;
                 }
@@ -563,7 +595,7 @@ public final class AuthService {
                 //4.获取加密后的AES的key值
                 String encryptAesKey = getAesPublicKey(encryptPublicKey);
                 if (StringUtils.isEmpty(encryptAesKey)) {
-                    log.error("获取AES密钥失败");
+                    LOG.error("获取AES密钥失败");
 //                    javax.swing.JOptionPane.showMessageDialog(null, "步骤4: 获取AES密钥失败", "登录调试", javax.swing.JOptionPane.ERROR_MESSAGE);
                     return retrunMap;
                 }
@@ -629,33 +661,31 @@ public final class AuthService {
                     clearLoginCache();
                     
                     // 启动token自动刷新机制
-                    log.info("准备启动token自动刷新定时器");
+                    LOG.info("准备启动token自动刷新定时器");
                     startTokenRefreshTimer();
-                    log.info("token自动刷新定时器启动完成");
+                    LOG.info("token自动刷新定时器启动完成");
                     
                     // ✅ 新增：启动MQTT连接检查定时器
-                    log.info("准备启动MQTT连接检查定时器");
+                    LOG.info("准备启动MQTT连接检查定时器");
                     startMqttCheckTimer();
-                    log.info("MQTT连接检查定时器启动完成");
+                    LOG.info("MQTT连接检查定时器启动完成");
                     
                     retrunMap.put(CommonConstant.TOKEN, token);
                     retrunMap.put(CommonConstant.USER_SID, resultMap.get(CommonConstant.SID));
                     
-                    log.info("登录成功，用户: {}, Token: {}, UserSid: {}, 剩余有效时间: {} 分钟", 
-                            username, token.substring(0, Math.min(token.length(), 10)) + "...", 
-                            this.userSid, getTokenRemainingMinutes());
-                    
-                    // 验证登录状态
-                    log.info("验证登录状态 - isLoggedIn(): {}", isLoggedIn());
-                    log.info("验证token过期时间: {}", tokenExpireTime);
-                    log.info("验证存储的用户名: {}", storedUsername != null ? "已存储" : "未存储");
+                            LOG.info("登录成功，用户: " + username + ", Token: " + token.substring(0, Math.min(token.length(), 10)) + "..., UserSid: " + this.userSid + ", 剩余有效时间: " + getTokenRemainingMinutes() + " 分钟");
+        
+        // 验证登录状态
+        LOG.info("验证登录状态 - isLoggedIn(): " + isLoggedIn());
+        LOG.info("验证token过期时间: " + tokenExpireTime);
+        LOG.info("验证存储的用户名: " + (storedUsername != null ? "已存储" : "未存储"));
                     
                     // 登录成功后启动MQTT连接，传递userSid
                     startMqttConnection(username, this.userSid);
                     
                     return retrunMap;
                 } else {
-                    log.warn("登录失败，服务器响应: {}", resultMap);
+                    LOG.warn("登录失败，服务器响应: " + resultMap);
                     // 调试：登录失败
 //                    javax.swing.JOptionPane.showMessageDialog(null, "步骤7: 登录失败，服务器响应中没有Token", "登录调试", javax.swing.JOptionPane.ERROR_MESSAGE);
                 }
@@ -680,7 +710,7 @@ public final class AuthService {
             }
         } catch (Exception ex) {
             String message = ex.getMessage();
-            log.error("登录失败，异常信息: {}", message, ex);
+            LOG.error("登录失败，异常信息: " + message, ex);
             
             // 调试：异常信息
 //            javax.swing.JOptionPane.showMessageDialog(null, "登录异常: " + message + "\n" + ex.getClass().getSimpleName(), "登录调试", javax.swing.JOptionPane.ERROR_MESSAGE);
@@ -696,7 +726,7 @@ public final class AuthService {
         String uri = iamUrl + IDENTITY_PUBLIC_KEY;
         try {
             // 添加调试信息
-            log.info("开始获取服务端公钥，URL: {}", uri);
+            LOG.info("开始获取服务端公钥，URL: " + uri);
 //            javax.swing.JOptionPane.showMessageDialog(null, "开始获取服务端公钥，URL: " + uri, "调试", javax.swing.JOptionPane.INFORMATION_MESSAGE);
             
             RestTemplate restTemplate = ReviewService.createUnsafeRestTemplate();
@@ -705,14 +735,14 @@ public final class AuthService {
             headers.add(CommonConstant.DIGI_MIDDLEWARE_AUTH_APP, iamApToken);
             
             // 添加调试信息
-            log.info("请求头: {}", headers);
+            LOG.info("请求头: " + headers);
             
             HttpEntity<Map<String, String>> httpEntity = new HttpEntity<>(headers);
             ResponseEntity<Map> response = restTemplate.exchange(uri, HttpMethod.GET, httpEntity, Map.class);
             
             // 添加调试信息
-            log.info("服务端公钥响应状态码: {}", response.getStatusCode());
-            log.info("服务端公钥响应体: {}", response.getBody());
+            LOG.info("服务端公钥响应状态码: " + response.getStatusCode());
+            LOG.info("服务端公钥响应体: " + response.getBody());
             
 //            javax.swing.JOptionPane.showMessageDialog(null,
 //                "服务端公钥响应:\n" +
@@ -722,15 +752,15 @@ public final class AuthService {
             
             if (response.getBody() != null && response.getBody().get(CommonConstant.PUBLIC_KEY) != null) {
                 String publicKey = String.valueOf(response.getBody().get(CommonConstant.PUBLIC_KEY));
-                log.info("成功获取服务端公钥，长度: {}", publicKey.length());
+                LOG.info("成功获取服务端公钥，长度: " + publicKey.length());
                 return publicKey;
             } else {
-                log.error("服务端公钥响应中没有publicKey字段");
+                LOG.error("服务端公钥响应中没有publicKey字段");
 //                javax.swing.JOptionPane.showMessageDialog(null, "服务端公钥响应中没有publicKey字段", "调试", javax.swing.JOptionPane.ERROR_MESSAGE);
                 return "";
             }
         } catch (Exception e) {
-            log.error("获取服务端公钥时出错：{}", e.getMessage(), e);
+            LOG.error("获取服务端公钥时出错：" + e.getMessage(), e);
 //            javax.swing.JOptionPane.showMessageDialog(null,
 //                "获取服务端公钥失败！\n" +
 //                "URL: " + uri + "\n" +
@@ -758,7 +788,7 @@ public final class AuthService {
             
             return String.valueOf(response.getBody().get(CommonConstant.ENCRYPT_AES_KEY));
         } catch (Exception e) {
-            log.error("获取AES密钥失败：{}", e.getMessage(), e);
+            LOG.error("获取AES密钥失败：" + e.getMessage(), e);
             
 //            javax.swing.JOptionPane.showMessageDialog(null,
 //                "获取AES密钥失败！\n" +
@@ -785,7 +815,7 @@ public final class AuthService {
      * 安全的退出登录（用于启动时，避免阻塞）
      */
     public void safeLogout() {
-        log.info("执行安全的退出登录操作");
+        LOG.info("执行安全的退出登录操作");
         
         // 只清理内存状态，不执行可能阻塞的操作
         tokenExpireTime = 0;
@@ -813,27 +843,27 @@ public final class AuthService {
         // 清除缓存
         clearLoginCache();
         
-        log.info("安全退出登录完成");
+        LOG.info("安全退出登录完成");
     }
 
     /**
      * 退出登录过程
      */
     public void logout() {
-        log.info("用户 {} 开始退出登录", currentUser);
+        LOG.info("用户 " + currentUser + " 开始退出登录");
         
         // 停止token刷新定时器
         if (tokenRefreshTimer != null) {
             tokenRefreshTimer.cancel();
             tokenRefreshTimer = null;
-            log.info("Token刷新定时器已停止");
+            LOG.info("Token刷新定时器已停止");
         }
         
         // ✅ 新增：停止MQTT检查定时器
         if (mqttCheckTimer != null) {
             mqttCheckTimer.cancel();
             mqttCheckTimer = null;
-            log.info("MQTT检查定时器已停止");
+            LOG.info("MQTT检查定时器已停止");
         }
         
         // 清除token管理相关状态
@@ -849,7 +879,7 @@ public final class AuthService {
             // 强制更新所有窗口的UI状态
             com.codereview.plugin.ui.ChatToolWindowFactory.updateCurrentPanelStatus();
         } catch (Exception e) {
-            log.error("清空面板内容时发生错误", e);
+            LOG.error("清空面板内容时发生错误", e);
         }
         
         // 断开MQTT连接
@@ -857,10 +887,10 @@ public final class AuthService {
             MQTTService mqttService = MQTTService.getInstance();
             if (mqttService.isConnected()) {
                 mqttService.disconnect();
-                log.info("MQTT连接已断开");
+                LOG.info("MQTT连接已断开");
             }
         } catch (Exception e) {
-            log.error("断开MQTT连接时发生错误", e);
+            LOG.error("断开MQTT连接时发生错误", e);
         }
         
         // 清除全局状态（添加同步保护）
@@ -882,7 +912,7 @@ public final class AuthService {
         // 清除缓存状态
         clearLoginCache();
         
-        log.info("用户退出登录完成");
+        LOG.info("用户退出登录完成");
     }
 
     /**
@@ -929,7 +959,7 @@ public final class AuthService {
             
             while (!connected && retryCount < maxRetries) {
                 try {
-                    log.info("开始为用户 {} (userSid: {}) 启动MQTT连接，尝试次数: {}", username, userSid, retryCount + 1);
+                    LOG.info("开始为用户 " + username + " (userSid: " + userSid + ") 启动MQTT连接，尝试次数: " + (retryCount + 1));
                     MQTTService mqttService = MQTTService.getInstance();
                     
                     // 保存当前的回调函数
@@ -938,7 +968,7 @@ public final class AuthService {
                     
                     // 如果已经连接，先断开
                     if (mqttService.isConnected()) {
-                        log.info("检测到已存在的MQTT连接，先断开");
+                        LOG.info("检测到已存在的MQTT连接，先断开");
                         mqttService.disconnect();
                     }
                     
@@ -956,7 +986,7 @@ public final class AuthService {
                     // 等待确认连接成功
                     Thread.sleep(1000); // 等待1秒确认连接状态
                     if (mqttService.isConnected()) {
-                        log.info("MQTT连接启动成功");
+                        LOG.info("MQTT连接启动成功");
                         connected = true;
                         
                         // 通知UI线程重新设置所有MQTT回调
@@ -964,25 +994,25 @@ public final class AuthService {
                             try {
                                 com.codereview.plugin.ui.CodeReviewPanel codeReviewPanel = com.codereview.plugin.ui.CodeReviewPanel.getInstance();
                                 if (codeReviewPanel != null) {
-                                    log.info("通知CodeReviewPanel重新设置MQTT回调");
+                                    LOG.info("通知CodeReviewPanel重新设置MQTT回调");
                                     codeReviewPanel.ensureCodeReviewMqttCallback();
                                 }
                                 // 新增：通知ChatToolWindowPanel重新设置code_generation回调
                                 com.codereview.plugin.ui.ChatToolWindowPanel chatPanel = com.codereview.plugin.ui.ChatToolWindowPanel.getInstance();
                                 if (chatPanel != null) {
-                                    log.info("通知ChatToolWindowPanel重新设置MQTT回调");
+                                    LOG.info("通知ChatToolWindowPanel重新设置MQTT回调");
                                     chatPanel.ensureCodeGenerationMqttCallback();
                                 }
                             } catch (Exception e) {
-                                log.error("通知UI设置回调时出错", e);
+                                LOG.error("通知UI设置回调时出错", e);
                             }
                         });
                     } else {
-                        log.warn("MQTT连接未成功建立，将重试");
+                        LOG.warn("MQTT连接未成功建立，将重试");
                         retryCount++;
                     }
-                } catch (Exception e) {
-                    log.error("启动MQTT连接失败: {}", e.getMessage(), e);
+                        } catch (Exception e) {
+            LOG.error("启动MQTT连接失败: " + e.getMessage(), e);
                     retryCount++;
                     if (retryCount < maxRetries) {
                         try {
@@ -996,7 +1026,7 @@ public final class AuthService {
             }
             
             if (!connected) {
-                log.error("MQTT连接在{}次尝试后仍然失败", maxRetries);
+                LOG.error("MQTT连接在" + maxRetries + "次尝试后仍然失败");
                 // 通知UI线程显示错误消息
                 com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
                     MQTTService mqttService = MQTTService.getInstance();
