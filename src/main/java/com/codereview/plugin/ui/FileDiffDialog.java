@@ -3,7 +3,6 @@ package com.codereview.plugin.ui;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
-import com.intellij.openapi.ui.Messages;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.components.JBTabbedPane;
@@ -14,6 +13,8 @@ import com.codereview.plugin.service.FileDiffService;
 import javax.swing.*;
 import javax.swing.border.Border;
 import java.awt.*;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -21,8 +22,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 文件差异显示对话框
- * 类似于Git的冲突解决界面，三区域布局
+ * 简化的文件差异显示对话框
+ * 两区域布局：左侧可编辑的原文件，右侧只读的新文件
  */
 public class FileDiffDialog extends DialogWrapper {
     private static final Logger LOG = Logger.getInstance(FileDiffDialog.class);
@@ -32,13 +33,12 @@ public class FileDiffDialog extends DialogWrapper {
     private final FileDiffService fileDiffService;
     
     private JTabbedPane tabbedPane;
-    private JButton overwriteButton;
-    private JButton skipButton;
-    private JButton mergeButton;
+    private JButton selectLeftButton;
+    private JButton selectRightButton;
     
     private int currentIndex = 0;
     private boolean[] resolvedFiles; // true表示已解决，false表示跳过
-    private JTextArea[] resultTextAreas; // 保存每个标签页的中间区域文本组件
+    private JTextArea[] leftTextAreas; // 左侧可编辑区域
     private String[] finalContents; // 保存每个文件的最终内容
 
     public FileDiffDialog(Project project, List<FileDiffService.FileDiffInfo> diffInfos) {
@@ -47,11 +47,11 @@ public class FileDiffDialog extends DialogWrapper {
         this.diffInfos = diffInfos;
         this.fileDiffService = FileDiffService.getInstance(project);
         this.resolvedFiles = new boolean[diffInfos.size()];
-        this.resultTextAreas = new JTextArea[diffInfos.size()];
+        this.leftTextAreas = new JTextArea[diffInfos.size()];
         this.finalContents = new String[diffInfos.size()];
         
         setTitle("文件差异检测 - " + diffInfos.size() + " 个文件有差异");
-        setSize(1200, 700);
+        setSize(1000, 600);
         setResizable(true);
         
         init();
@@ -60,15 +60,15 @@ public class FileDiffDialog extends DialogWrapper {
     @Override
     protected JComponent createCenterPanel() {
         JPanel mainPanel = new JPanel(new BorderLayout());
-        mainPanel.setPreferredSize(new Dimension(1200, 700));
+        mainPanel.setPreferredSize(new Dimension(1000, 600));
         
         // 创建标签页
-        tabbedPane = new JBTabbedPane();
+        tabbedPane = new JTabbedPane();
         
         // 为每个有差异的文件创建标签页
         for (int i = 0; i < diffInfos.size(); i++) {
             FileDiffService.FileDiffInfo diffInfo = diffInfos.get(i);
-            JPanel tabPanel = createThreeWayDiffTab(diffInfo, i);
+            JPanel tabPanel = createTwoWayDiffTab(diffInfo, i);
             tabbedPane.addTab(diffInfo.getFileName(), tabPanel);
         }
         
@@ -90,7 +90,7 @@ public class FileDiffDialog extends DialogWrapper {
         return mainPanel;
     }
 
-    private JPanel createThreeWayDiffTab(FileDiffService.FileDiffInfo diffInfo, int index) {
+    private JPanel createTwoWayDiffTab(FileDiffService.FileDiffInfo diffInfo, int index) {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(JBUI.Borders.empty(10));
         
@@ -109,300 +109,156 @@ public class FileDiffDialog extends DialogWrapper {
         
         panel.add(infoPanel, BorderLayout.NORTH);
         
-        // 三区域差异内容面板
-        JPanel diffPanel = new JPanel(new GridLayout(1, 3, 5, 0));
+        // 两区域差异内容面板
+        JPanel diffPanel = new JPanel(new GridLayout(1, 2, 10, 0));
         
-        // 左侧：现有文件内容
-        JPanel existingPanel = createContentPanel("现有文件", diffInfo.getExistingContent(), false);
-        diffPanel.add(existingPanel);
+        // 左侧：原文件内容（可编辑）
+        JPanel leftPanel = createLeftPanel(diffInfo, index);
+        diffPanel.add(leftPanel);
         
-        // 中间：最终结果（可编辑）
-        JPanel resultPanel = createResultPanel(diffInfo, index);
-        diffPanel.add(resultPanel);
-        
-        // 右侧：新文件内容
-        JPanel newPanel = createContentPanel("新文件", diffInfo.getNewContent(), true);
-        diffPanel.add(newPanel);
+        // 右侧：新文件内容（只读，支持复制）
+        JPanel rightPanel = createRightPanel(diffInfo);
+        diffPanel.add(rightPanel);
         
         panel.add(diffPanel, BorderLayout.CENTER);
         
         return panel;
     }
 
-    private JPanel createContentPanel(String title, String content, boolean isNew) {
-        JPanel panel = new JPanel(new BorderLayout());
-        Border border = JBUI.Borders.customLine(isNew ? new Color(0x28A745) : new Color(0xDC3545));
-        panel.setBorder(border);
-        panel.setBorder(JBUI.Borders.empty(5));
-        
-        // 标题
-        JBLabel titleLabel = new JBLabel(title);
-        titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD));
-        titleLabel.setForeground(isNew ? new Color(0x28A745) : new Color(0xDC3545));
-        panel.add(titleLabel, BorderLayout.NORTH);
-        
-        // 内容区域
-        JTextArea textArea = new JTextArea(content);
-        textArea.setEditable(false);
-        textArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
-        textArea.setLineWrap(true);
-        textArea.setWrapStyleWord(true);
-        textArea.setBackground(UIUtil.getPanelBackground());
-        
-        // 如果是新文件区域，添加差异高亮和可点击箭头
-        if (isNew) {
-            addDiffHighlightingWithArrows(textArea, content);
-        }
-        
-        JBScrollPane scrollPane = new JBScrollPane(textArea);
-        scrollPane.setPreferredSize(new Dimension(350, 500));
-        panel.add(scrollPane, BorderLayout.CENTER);
-        
-        return panel;
-    }
-
-    private JPanel createResultPanel(FileDiffService.FileDiffInfo diffInfo, int index) {
+    private JPanel createLeftPanel(FileDiffService.FileDiffInfo diffInfo, int index) {
         JPanel panel = new JPanel(new BorderLayout());
         Border border = JBUI.Borders.customLine(new Color(0x007ACC));
         panel.setBorder(border);
         panel.setBorder(JBUI.Borders.empty(5));
         
         // 标题
-        JBLabel titleLabel = new JBLabel("最终结果");
+        JBLabel titleLabel = new JBLabel("原文件内容（可编辑）");
         titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD));
         titleLabel.setForeground(new Color(0x007ACC));
         panel.add(titleLabel, BorderLayout.NORTH);
         
-        // 可编辑的结果区域
-        JTextArea resultArea = new JTextArea();
-        resultArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
-        resultArea.setLineWrap(true);
-        resultArea.setWrapStyleWord(true);
-        resultArea.setBackground(UIUtil.getEditorPaneBackground());
-        
-        // 初始化内容（默认使用新文件内容作为基础）
-        resultArea.setText(diffInfo.getNewContent());
+        // 可编辑的内容区域
+        JTextArea textArea = new JTextArea(diffInfo.getExistingContent());
+        textArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
+        textArea.setLineWrap(true);
+        textArea.setWrapStyleWord(true);
+        textArea.setBackground(UIUtil.getEditorPaneBackground());
         
         // 保存文本组件引用
-        resultTextAreas[index] = resultArea;
+        leftTextAreas[index] = textArea;
         
-        JBScrollPane scrollPane = new JBScrollPane(resultArea);
-        scrollPane.setPreferredSize(new Dimension(350, 500));
+        JBScrollPane scrollPane = new JBScrollPane(textArea);
+        scrollPane.setPreferredSize(new Dimension(450, 400));
         panel.add(scrollPane, BorderLayout.CENTER);
-        
-        // 移除中间区域的操作按钮，统一使用底部按钮
         
         return panel;
     }
 
-    private void addSyntaxHighlighting(JTextArea textArea, String existingContent, String newContent) {
-        // 简单的差异高亮实现
-        String[] existingLines = existingContent.split("\n");
-        String[] newLines = newContent.split("\n");
+    private JPanel createRightPanel(FileDiffService.FileDiffInfo diffInfo) {
+        JPanel panel = new JPanel(new BorderLayout());
+        Border border = JBUI.Borders.customLine(new Color(0x28A745));
+        panel.setBorder(border);
+        panel.setBorder(JBUI.Borders.empty(5));
         
-        // 这里可以实现更复杂的差异高亮算法
-        // 目前先使用简单的行级比较
-        StringBuilder highlightedContent = new StringBuilder();
+        // 标题
+        JBLabel titleLabel = new JBLabel("新文件内容（只读，支持复制）");
+        titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD));
+        titleLabel.setForeground(new Color(0x28A745));
+        panel.add(titleLabel, BorderLayout.NORTH);
         
-        int maxLines = Math.max(existingLines.length, newLines.length);
-        for (int i = 0; i < maxLines; i++) {
-            String existingLine = i < existingLines.length ? existingLines[i] : "";
-            String newLine = i < newLines.length ? newLines[i] : "";
-            
-            if (!existingLine.equals(newLine)) {
-                // 有差异的行，添加标记
-                if (!existingLine.isEmpty()) {
-                    highlightedContent.append("// 删除: ").append(existingLine).append("\n");
-                }
-                if (!newLine.isEmpty()) {
-                    highlightedContent.append("// 新增: ").append(newLine).append("\n");
-                }
-            } else {
-                // 相同的行
-                highlightedContent.append(newLine).append("\n");
-            }
-        }
+        // 只读的内容区域
+        JTextArea textArea = new JTextArea(diffInfo.getNewContent());
+        textArea.setEditable(false);
+        textArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
+        textArea.setLineWrap(true);
+        textArea.setWrapStyleWord(true);
+        textArea.setBackground(UIUtil.getPanelBackground());
         
-        textArea.setText(highlightedContent.toString());
-    }
-
-    private void addDiffHighlightingWithArrows(JTextArea textArea, String newContent) {
-        // 获取当前文件的差异信息
-        if (currentIndex < 0 || currentIndex >= diffInfos.size()) {
-            return;
-        }
-        
-        FileDiffService.FileDiffInfo diffInfo = diffInfos.get(currentIndex);
-        String existingContent = diffInfo.getExistingContent();
-        
-        // 分析差异并添加可点击箭头
-        String[] existingLines = existingContent.split("\n");
-        String[] newLines = newContent.split("\n");
-        
-        StringBuilder highlightedContent = new StringBuilder();
-        highlightedContent.append("// 点击箭头 → 将内容合并到结果区域\n");
-        highlightedContent.append("// 点击行号选择整行内容\n\n");
-        
-        int maxLines = Math.max(existingLines.length, newLines.length);
-        for (int i = 0; i < maxLines; i++) {
-            String existingLine = i < existingLines.length ? existingLines[i] : "";
-            String newLine = i < newLines.length ? newLines[i] : "";
-            
-            if (!existingLine.equals(newLine)) {
-                // 有差异的行，添加可点击箭头
-                if (!newLine.isEmpty()) {
-                    highlightedContent.append(String.format("%3d → %s\n", i + 1, newLine));
-                }
-            } else {
-                // 相同的行，正常显示
-                highlightedContent.append(String.format("%3d   %s\n", i + 1, newLine));
-            }
-        }
-        
-        textArea.setText(highlightedContent.toString());
-        
-        // 添加鼠标点击事件
+        // 添加复制功能
         textArea.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
-                handleArrowClick(e, textArea, existingContent, newContent);
+                if (e.getClickCount() == 2) {
+                    // 双击复制全部内容
+                    copyToClipboard(textArea.getText());
+                    showCopyMessage();
+                }
             }
         });
         
-        // 设置光标样式
-        textArea.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        // 添加右键菜单
+        JPopupMenu popupMenu = new JPopupMenu();
+        JMenuItem copyAllItem = new JMenuItem("复制全部内容");
+        copyAllItem.addActionListener(e -> {
+            copyToClipboard(textArea.getText());
+            showCopyMessage();
+        });
+        popupMenu.add(copyAllItem);
+        
+        JMenuItem copySelectedItem = new JMenuItem("复制选中内容");
+        copySelectedItem.addActionListener(e -> {
+            String selectedText = textArea.getSelectedText();
+            if (selectedText != null && !selectedText.isEmpty()) {
+                copyToClipboard(selectedText);
+                showCopyMessage();
+            }
+        });
+        popupMenu.add(copySelectedItem);
+        
+        textArea.setComponentPopupMenu(popupMenu);
+        
+        JBScrollPane scrollPane = new JBScrollPane(textArea);
+        scrollPane.setPreferredSize(new Dimension(450, 400));
+        panel.add(scrollPane, BorderLayout.CENTER);
+        
+        return panel;
     }
 
-    private void handleArrowClick(MouseEvent e, JTextArea textArea, String existingContent, String newContent) {
+    private void copyToClipboard(String text) {
         try {
-            // 获取点击位置对应的行
-            int offset = textArea.viewToModel(e.getPoint());
-            int line = textArea.getLineOfOffset(offset);
-            
-            // 获取该行的文本
-            int lineStart = textArea.getLineStartOffset(line);
-            int lineEnd = textArea.getLineEndOffset(line);
-            String lineText = textArea.getText(lineStart, lineEnd - lineStart).trim();
-            
-            // 检查是否点击了箭头行（包含 → 符号）
-            if (lineText.contains("→")) {
-                // 提取实际内容（去掉行号和箭头）
-                String content = lineText.substring(lineText.indexOf("→") + 1).trim();
-                
-                // 将内容添加到结果区域
-                if (currentIndex >= 0 && currentIndex < resultTextAreas.length) {
-                    JTextArea resultArea = resultTextAreas[currentIndex];
-                    String currentResult = resultArea.getText();
-                    
-                    // 将内容追加到结果区域
-                    if (currentResult.isEmpty()) {
-                        resultArea.setText(content);
-                    } else {
-                        resultArea.setText(currentResult + "\n" + content);
-                    }
-                    
-                    // 显示提示
-                    textArea.setToolTipText("已合并到结果区域: " + content);
-                    
-                    // 高亮显示已点击的行
-                    highlightClickedLine(textArea, line);
-                }
-            }
-        } catch (Exception ex) {
-            LOG.warn("处理箭头点击时出错", ex);
+            StringSelection selection = new StringSelection(text);
+            Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+            clipboard.setContents(selection, selection);
+        } catch (Exception e) {
+            LOG.error("复制到剪贴板失败", e);
         }
     }
 
-    private void highlightClickedLine(JTextArea textArea, int line) {
-        try {
-            // 高亮显示已点击的行（通过添加注释标记）
-            int lineStart = textArea.getLineStartOffset(line);
-            int lineEnd = textArea.getLineEndOffset(line);
-            String lineText = textArea.getText(lineStart, lineEnd - lineStart).trim();
-            
-            // 如果还没有标记，添加标记
-            if (!lineText.contains(" ✓")) {
-                String newLineText = lineText + " ✓";
-                textArea.replaceRange(newLineText, lineStart, lineEnd);
-            }
-        } catch (Exception ex) {
-            LOG.warn("高亮点击行时出错", ex);
-        }
-    }
-
-    private String mergeContent(String existingContent, String newContent) {
-        // 智能合并策略：保留相同的行，对于不同的行选择保留新版本
-        String[] existingLines = existingContent.split("\n");
-        String[] newLines = newContent.split("\n");
-        
-        StringBuilder merged = new StringBuilder();
-        merged.append("// ===== 智能合并结果 =====\n");
-        
-        int maxLines = Math.max(existingLines.length, newLines.length);
-        for (int i = 0; i < maxLines; i++) {
-            String existingLine = i < existingLines.length ? existingLines[i] : "";
-            String newLine = i < newLines.length ? newLines[i] : "";
-            
-            if (existingLine.equals(newLine)) {
-                // 相同的行，直接保留
-                merged.append(newLine).append("\n");
-            } else {
-                // 不同的行，优先保留新版本，但添加注释说明
-                if (!newLine.isEmpty()) {
-                    merged.append(newLine).append(" // 合并：保留新版本\n");
-                } else if (!existingLine.isEmpty()) {
-                    merged.append("// 删除: ").append(existingLine).append("\n");
-                }
-            }
-        }
-        
-        return merged.toString();
+    private void showCopyMessage() {
+        JOptionPane.showMessageDialog(getContentPane(), "内容已复制到剪贴板", "提示", JOptionPane.INFORMATION_MESSAGE);
     }
 
     private JPanel createButtonPanel() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         panel.setBorder(JBUI.Borders.empty(10, 0, 0, 0));
         
-        // 保留原文件按钮
-        JButton useOriginalButton = new JButton("保留原文件");
-        useOriginalButton.addActionListener(e -> {
+        // 选择左边按钮
+        selectLeftButton = new JButton("选择左边");
+        selectLeftButton.setPreferredSize(new Dimension(100, 32));
+        selectLeftButton.addActionListener(e -> {
             if (currentIndex >= 0 && currentIndex < diffInfos.size()) {
-                FileDiffService.FileDiffInfo diffInfo = diffInfos.get(currentIndex);
-                String originalContent = diffInfo.getExistingContent();
-                resultTextAreas[currentIndex].setText(originalContent);
-                finalContents[currentIndex] = originalContent; // 保存最终内容
+                // 使用左侧编辑后的内容
+                String leftContent = leftTextAreas[currentIndex].getText();
+                finalContents[currentIndex] = leftContent;
                 resolvedFiles[currentIndex] = true;
                 moveToNextFile();
             }
         });
-        panel.add(useOriginalButton);
+        panel.add(selectLeftButton);
         
-        // 使用新文件按钮
-        JButton useNewButton = new JButton("使用新文件");
-        useNewButton.addActionListener(e -> {
+        // 选择右边按钮
+        selectRightButton = new JButton("选择右边");
+        selectRightButton.setPreferredSize(new Dimension(100, 32));
+        selectRightButton.addActionListener(e -> {
             if (currentIndex >= 0 && currentIndex < diffInfos.size()) {
+                // 使用右侧新文件内容
                 FileDiffService.FileDiffInfo diffInfo = diffInfos.get(currentIndex);
-                String newContent = diffInfo.getNewContent();
-                resultTextAreas[currentIndex].setText(newContent);
-                finalContents[currentIndex] = newContent; // 保存最终内容
+                finalContents[currentIndex] = diffInfo.getNewContent();
                 resolvedFiles[currentIndex] = true;
                 moveToNextFile();
             }
         });
-        panel.add(useNewButton);
-        
-        // 使用合并结果按钮
-        JButton useResultButton = new JButton("使用合并结果");
-        useResultButton.addActionListener(e -> {
-            if (currentIndex >= 0 && currentIndex < diffInfos.size()) {
-                // 保存当前结果区域的内容
-                String mergedContent = resultTextAreas[currentIndex].getText();
-                finalContents[currentIndex] = mergedContent; // 保存最终内容
-                resolvedFiles[currentIndex] = true;
-                moveToNextFile();
-            }
-        });
-        panel.add(useResultButton);
+        panel.add(selectRightButton);
         
         return panel;
     }
@@ -418,27 +274,10 @@ public class FileDiffDialog extends DialogWrapper {
                 tabTitle += " ✓";
             }
             tabbedPane.setTitleAt(currentIndex, tabTitle);
-        }
-    }
-
-    private void skipCurrentFile(ActionEvent e) {
-        if (currentIndex >= 0 && currentIndex < diffInfos.size()) {
-            resolvedFiles[currentIndex] = true;
-            moveToNextFile();
-        }
-    }
-
-    private void overwriteCurrentFile(ActionEvent e) {
-        if (currentIndex >= 0 && currentIndex < diffInfos.size()) {
-            resolvedFiles[currentIndex] = true;
-            moveToNextFile();
-        }
-    }
-
-    private void mergeCurrentFile(ActionEvent e) {
-        if (currentIndex >= 0 && currentIndex < diffInfos.size()) {
-            resolvedFiles[currentIndex] = true;
-            moveToNextFile();
+            
+            // 更新按钮状态
+            selectLeftButton.setEnabled(!isResolved);
+            selectRightButton.setEnabled(!isResolved);
         }
     }
 
@@ -476,9 +315,8 @@ public class FileDiffDialog extends DialogWrapper {
     
     public enum ResolutionType {
         SKIP,      // 跳过
-        ORIGINAL,  // 使用原文件
-        NEW,       // 使用新文件
-        MERGED     // 使用合并结果
+        ORIGINAL,  // 使用原文件（左侧编辑后的内容）
+        NEW        // 使用新文件（右侧内容）
     }
     
     public ResolutionResult[] getResolutionResults() {
@@ -496,7 +334,8 @@ public class FileDiffDialog extends DialogWrapper {
                 } else if (finalContent.equals(newContent)) {
                     type = ResolutionType.NEW;
                 } else {
-                    type = ResolutionType.MERGED;
+                    // 如果内容被编辑过，也归类为ORIGINAL
+                    type = ResolutionType.ORIGINAL;
                 }
                 
                 results[i] = new ResolutionResult(finalContent, type);

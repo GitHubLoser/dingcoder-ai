@@ -847,50 +847,205 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                 } catch (Exception ex) {
                     // ignore
                 }
-                CodeGenerationService codeGenService = CodeGenerationService.getInstance(project);
-                if (codeGenService.generateJavaFile(content, true)) {
-                    generateButton.setText("✓ 已生成");
-                    generateButton.setEnabled(false);
-                    generateButton.setBackground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
-                    
-                    // ✅ 设置消息为已生成状态，确保状态联动
-                    message.setGenerated(true);
-                    
-                    // 记录代码生成统计
-                    recordCodeGenerationEvent(content, className, true);
+                
+                // ✅ 添加差异检测逻辑
+                String extractedClassName = extractClassName(content);
+                LOG.info("[差异检测] 提取的类名: " + extractedClassName);
+                if (extractedClassName != null) {
+                    VirtualFile targetDir = CodeGenerationService.getInstance(project).getCurrentSelectedDirectory();
+                    LOG.info("[差异检测] 目标目录: " + (targetDir != null ? targetDir.getPath() : "null"));
+                    if (targetDir != null && checkSelectedPath()) {
+                        // 检查文件差异
+                        FileDiffService fileDiffService = FileDiffService.getInstance(project);
+                        LOG.info("[差异检测] FileDiffService: " + (fileDiffService != null ? "创建成功" : "创建失败"));
+                        if (fileDiffService != null) {
+                            FileDiffService.FileDiffInfo diffInfo = fileDiffService.checkFileDifferences(extractedClassName, content, targetDir);
+                            LOG.info("[差异检测] 差异检测结果: hasDifferences=" + diffInfo.hasDifferences() + ", fileName=" + diffInfo.getFileName());
+                            
+                            // 如果文件存在，显示差异对话框
+                            if (diffInfo.hasDifferences()) {
+                                List<FileDiffService.FileDiffInfo> singleDiffList = new ArrayList<>();
+                                singleDiffList.add(diffInfo);
+                                com.codereview.plugin.ui.FileDiffDialog.ResolutionResult[] resolutionResults = com.codereview.plugin.ui.FileDiffDialog.showMultipleFileDiff(project, singleDiffList);
+                                if (resolutionResults == null || resolutionResults.length == 0) {
+                                    // 用户取消
+                                    return;
+                                }
+                                
+                                com.codereview.plugin.ui.FileDiffDialog.ResolutionResult resolution = resolutionResults[0];
+                                
+                                // 根据用户选择处理文件
+                                switch (resolution.getType()) {
+                                    case ORIGINAL:
+                                        // 保留现有文件，但标记为已生成
+                                        message.setGenerated(true);
+                                        generateButton.setText("✓ 已生成");
+                                        generateButton.setEnabled(false);
+                                        generateButton.setBackground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
+                                        break;
+                                    case NEW:
+                                        // 使用新内容生成文件
+                                        String finalContent = resolution.getContent();
+                                        if (finalContent != null && !finalContent.trim().isEmpty()) {
+                                            // 使用自定义内容生成文件
+                                            generateFileWithCustomContent(message, finalContent, targetDir);
+                                            generateButton.setText("✓ 已生成");
+                                            generateButton.setEnabled(false);
+                                            generateButton.setBackground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
+                                        } else {
+                                            // 如果内容为空，标记为已生成但不实际生成文件
+                                            message.setGenerated(true);
+                                            generateButton.setText("✓ 已生成");
+                                            generateButton.setEnabled(false);
+                                            generateButton.setBackground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
+                                        }
+                                        break;
+                                }
+                            } else {
+                                // 文件不存在，直接生成
+                                CodeGenerationService codeGenService = CodeGenerationService.getInstance(project);
+                                if (codeGenService.generateJavaFile(content, true)) {
+                                    generateButton.setText("✓ 已生成");
+                                    generateButton.setEnabled(false);
+                                    generateButton.setBackground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
+                                    
+                                    // ✅ 设置消息为已生成状态，确保状态联动
+                                    message.setGenerated(true);
+                                    
+                                    // 记录代码生成统计
+                                    recordCodeGenerationEvent(content, extractedClassName, true);
 
-                    // 写入msgMapping到多语言文件
-                    try {
-                        LOG.info("[多语言][DEBUG] 生成文件按钮: message hashCode=" + System.identityHashCode(message) + ", msgMapping=" + message.getMsgMapping() + ", ref=" + System.identityHashCode(message.getMsgMapping()));
-                        Map<String, String> mappingMap = message.getMsgMapping();
-                        LOG.info("[多语言] 当前msgMapping Map内容: " + mappingMap);
-                        if (mappingMap != null && !mappingMap.isEmpty()) {
-                            for (Map.Entry<String, String> entry : mappingMap.entrySet()) {
-                                String key = entry.getKey();
-                                String value = entry.getValue();
-                                LOG.info("[多语言] 写入前 key=" + key + ", value=" + value);
-                                com.codereview.plugin.service.GenerateMessageMappingService.writeUnicodeProperties(project, key, value);
-                                LOG.info("[多语言] 写入完成");
+                                    // 写入msgMapping到多语言文件
+                                    try {
+                                        LOG.info("[多语言][DEBUG] 生成文件按钮: message hashCode=" + System.identityHashCode(message) + ", msgMapping=" + message.getMsgMapping() + ", ref=" + System.identityHashCode(message.getMsgMapping()));
+                                        Map<String, String> mappingMap = message.getMsgMapping();
+                                        LOG.info("[多语言] 当前msgMapping Map内容: " + mappingMap);
+                                        if (mappingMap != null && !mappingMap.isEmpty()) {
+                                            for (Map.Entry<String, String> entry : mappingMap.entrySet()) {
+                                                String key = entry.getKey();
+                                                String value = entry.getValue();
+                                                LOG.info("[多语言] 写入前 key=" + key + ", value=" + value);
+                                                com.codereview.plugin.service.GenerateMessageMappingService.writeUnicodeProperties(project, key, value);
+                                                LOG.info("[多语言] 写入完成");
+                                            }
+                                            // 写入完成后再清空msgMapping
+                                            com.codereview.plugin.service.MQTTService.getInstance().clearCodeGenerationMsgMapping();
+                                        } else {
+                                            LOG.info("[多语言] 未检测到msgMapping内容，无需写入");
+                                        }
+                                    } catch (Exception ex) {
+                                        LOG.error("[多语言] 写入多语言文件失败", ex);
+                                    }
+                                    // 发送统计接口 type=0
+                                    LOG.info("[统计] 即将上报 codeId=" + (message.getUuid()) + ", userName=" + com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser() + ", className=" + extractedClassName + ", type=0");
+                                    com.codereview.plugin.service.CodeGenerationStatisticsService.getInstance().sendStatistics(
+                                        message.getUuid(),
+                                        com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser(),
+                                        extractedClassName,
+                                        "0",
+                                        null,
+                                        null
+                                    );
+                                    LOG.info("[统计] sendStatistics已调用完成（type=0）");
+                                }
                             }
-                            // 写入完成后再清空msgMapping
-                            com.codereview.plugin.service.MQTTService.getInstance().clearCodeGenerationMsgMapping();
                         } else {
-                            LOG.info("[多语言] 未检测到msgMapping内容，无需写入");
+                            LOG.warn("FileDiffService实例创建失败，跳过差异检测，直接生成文件");
+                            // 降级处理：直接生成
+                            CodeGenerationService codeGenService = CodeGenerationService.getInstance(project);
+                            if (codeGenService.generateJavaFile(content, true)) {
+                                generateButton.setText("✓ 已生成");
+                                generateButton.setEnabled(false);
+                                generateButton.setBackground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
+                                
+                                // ✅ 设置消息为已生成状态，确保状态联动
+                                message.setGenerated(true);
+                                
+                                // 记录代码生成统计
+                                recordCodeGenerationEvent(content, extractedClassName, true);
+
+                                // 写入msgMapping到多语言文件
+                                try {
+                                    LOG.info("[多语言][DEBUG] 生成文件按钮: message hashCode=" + System.identityHashCode(message) + ", msgMapping=" + message.getMsgMapping() + ", ref=" + System.identityHashCode(message.getMsgMapping()));
+                                    Map<String, String> mappingMap = message.getMsgMapping();
+                                    LOG.info("[多语言] 当前msgMapping Map内容: " + mappingMap);
+                                    if (mappingMap != null && !mappingMap.isEmpty()) {
+                                        for (Map.Entry<String, String> entry : mappingMap.entrySet()) {
+                                            String key = entry.getKey();
+                                            String value = entry.getValue();
+                                            LOG.info("[多语言] 写入前 key=" + key + ", value=" + value);
+                                            com.codereview.plugin.service.GenerateMessageMappingService.writeUnicodeProperties(project, key, value);
+                                            LOG.info("[多语言] 写入完成");
+                                        }
+                                        // 写入完成后再清空msgMapping
+                                        com.codereview.plugin.service.MQTTService.getInstance().clearCodeGenerationMsgMapping();
+                                    } else {
+                                        LOG.info("[多语言] 未检测到msgMapping内容，无需写入");
+                                    }
+                                } catch (Exception ex) {
+                                    LOG.error("[多语言] 写入多语言文件失败", ex);
+                                }
+                                // 发送统计接口 type=0
+                                LOG.info("[统计] 即将上报 codeId=" + (message.getUuid()) + ", userName=" + com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser() + ", className=" + extractedClassName + ", type=0");
+                                com.codereview.plugin.service.CodeGenerationStatisticsService.getInstance().sendStatistics(
+                                    message.getUuid(),
+                                    com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser(),
+                                    extractedClassName,
+                                    "0",
+                                    null,
+                                    null
+                                );
+                                LOG.info("[统计] sendStatistics已调用完成（type=0）");
+                            }
                         }
-                    } catch (Exception ex) {
-                        LOG.error("[多语言] 写入多语言文件失败", ex);
+                    } else {
+                        // 没有选择路径，直接生成
+                        CodeGenerationService codeGenService = CodeGenerationService.getInstance(project);
+                        if (codeGenService.generateJavaFile(content, true)) {
+                            generateButton.setText("✓ 已生成");
+                            generateButton.setEnabled(false);
+                            generateButton.setBackground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
+                            
+                            // ✅ 设置消息为已生成状态，确保状态联动
+                            message.setGenerated(true);
+                            
+                            // 记录代码生成统计
+                            recordCodeGenerationEvent(content, className, true);
+
+                            // 写入msgMapping到多语言文件
+                            try {
+                                LOG.info("[多语言][DEBUG] 生成文件按钮: message hashCode=" + System.identityHashCode(message) + ", msgMapping=" + message.getMsgMapping() + ", ref=" + System.identityHashCode(message.getMsgMapping()));
+                                Map<String, String> mappingMap = message.getMsgMapping();
+                                LOG.info("[多语言] 当前msgMapping Map内容: " + mappingMap);
+                                if (mappingMap != null && !mappingMap.isEmpty()) {
+                                    for (Map.Entry<String, String> entry : mappingMap.entrySet()) {
+                                        String key = entry.getKey();
+                                        String value = entry.getValue();
+                                        LOG.info("[多语言] 写入前 key=" + key + ", value=" + value);
+                                        com.codereview.plugin.service.GenerateMessageMappingService.writeUnicodeProperties(project, key, value);
+                                        LOG.info("[多语言] 写入完成");
+                                    }
+                                    // 写入完成后再清空msgMapping
+                                    com.codereview.plugin.service.MQTTService.getInstance().clearCodeGenerationMsgMapping();
+                                } else {
+                                    LOG.info("[多语言] 未检测到msgMapping内容，无需写入");
+                                }
+                            } catch (Exception ex) {
+                                LOG.error("[多语言] 写入多语言文件失败", ex);
+                            }
+                            // 发送统计接口 type=0
+                            LOG.info("[统计] 即将上报 codeId=" + (message.getUuid()) + ", userName=" + com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser() + ", className=" + className + ", type=0");
+                            com.codereview.plugin.service.CodeGenerationStatisticsService.getInstance().sendStatistics(
+                                message.getUuid(),
+                                com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser(),
+                                className,
+                                "0",
+                                null,
+                                null
+                            );
+                            LOG.info("[统计] sendStatistics已调用完成（type=0）");
+                        }
                     }
-                    // 发送统计接口 type=0
-                    LOG.info("[统计] 即将上报 codeId=" + (message.getUuid()) + ", userName=" + com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser() + ", className=" + className + ", type=0");
-                    com.codereview.plugin.service.CodeGenerationStatisticsService.getInstance().sendStatistics(
-                        message.getUuid(),
-                        com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser(),
-                        className,
-                        "0",
-                        null,
-                        null
-                    );
-                    LOG.info("[统计] sendStatistics已调用完成（type=0）");
                 }
             });
             
@@ -1511,8 +1666,7 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             return;
         }
 
-        // 注释掉差异比对功能 - 开始
-        /*
+        // ✅ 恢复差异比对功能
         // 检查文件差异
         FileDiffService fileDiffService = FileDiffService.getInstance(project);
         List<FileDiffService.FileDiffInfo> diffInfos = new ArrayList<>();
@@ -1542,7 +1696,8 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                 }
                 
                 // 找到对应的消息
-                int messageIndex = classNames.indexOf(diffInfo.getFileName().replace(".java", ""));
+                // ✅ 修复：diffInfo.getFileName()已经是完整文件名，不需要去掉.java后缀
+                int messageIndex = classNames.indexOf(diffInfo.getFileName());
                 if (messageIndex >= 0) {
                     ChatMessage message = messagesToGenerate.get(messageIndex);
                     
@@ -1553,14 +1708,10 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                             message.setGenerated(true);
                             break;
                         case NEW:
-                        case MERGED:
-                            // 使用新内容或合并内容生成文件
+                            // 使用新内容生成文件
                             String finalContent = resolution.getContent();
                             if (finalContent != null && !finalContent.trim().isEmpty()) {
-                                // 临时修改消息内容为最终内容
-                                String originalContent = message.getContent();
-                                // 这里需要修改消息内容，但由于ChatMessage的content是final的，我们需要其他方式
-                                // 暂时使用generateFileWithDiffHandling，但传入最终内容
+                                // 使用自定义内容生成文件
                                 generateFileWithCustomContent(message, finalContent, targetDir);
                             } else {
                                 // 如果内容为空，标记为已生成但不实际生成文件
@@ -1575,13 +1726,6 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             for (ChatMessage message : messagesToGenerate) {
                 generateFileWithDiffHandling(message, targetDir, false);
             }
-        }
-        */
-        // 注释掉差异比对功能 - 结束
-        
-        // 直接生成所有文件（跳过差异比对）
-        for (ChatMessage message : messagesToGenerate) {
-            generateFileWithDiffHandling(message, targetDir, false);
         }
 
         // 刷新UI
@@ -1600,6 +1744,55 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         );
     }
 
+
+    /**
+     * 使用自定义内容生成文件
+     */
+    private void generateFileWithCustomContent(ChatMessage message, String customContent, VirtualFile targetDir) {
+        String className = extractClassName(customContent);
+        if (className != null) {
+            if (CodeGenerationService.getInstance(project).generateJavaFile(customContent, true, false, targetDir)) {
+                message.setGenerated(true);
+                
+                // 记录代码生成统计
+                recordCodeGenerationEvent(customContent, className, true);
+                
+                // 写入msgMapping到多语言文件
+                try {
+                    LOG.info("[多语言][DEBUG] 自定义内容生成文件: message hashCode=" + System.identityHashCode(message) + ", msgMapping=" + message.getMsgMapping() + ", ref=" + System.identityHashCode(message.getMsgMapping()));
+                    Map<String, String> mappingMap = message.getMsgMapping();
+                    LOG.info("[多语言] 自定义内容生成当前msgMapping Map内容: " + mappingMap);
+                    if (mappingMap != null && !mappingMap.isEmpty()) {
+                        for (Map.Entry<String, String> entry : mappingMap.entrySet()) {
+                            String key = entry.getKey();
+                            String value = entry.getValue();
+                            LOG.info("[多语言] 自定义内容生成写入前 key=" + key + ", value=" + value);
+                            com.codereview.plugin.service.GenerateMessageMappingService.writeUnicodeProperties(project, key, value);
+                            LOG.info("[多语言] 自定义内容生成写入完成");
+                        }
+                        // 写入完成后再清空msgMapping
+                        com.codereview.plugin.service.MQTTService.getInstance().clearCodeGenerationMsgMapping();
+                    } else {
+                        LOG.info("[多语言] 自定义内容生成未检测到msgMapping内容，无需写入");
+                    }
+                } catch (Exception ex) {
+                    LOG.error("[多语言] 自定义内容生成写入多语言文件失败", ex);
+                }
+                
+                // 发送统计接口 type=0
+                LOG.info("[统计] 自定义内容生成即将上报 codeId=" + (message.getUuid()) + ", userName=" + com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser() + ", className=" + className + ", type=0");
+                com.codereview.plugin.service.CodeGenerationStatisticsService.getInstance().sendStatistics(
+                    message.getUuid(),
+                    com.codereview.plugin.auth.AuthService.getInstance().getCurrentUser(),
+                    className,
+                    "0",
+                    null,
+                    null
+                );
+                LOG.info("[统计] 自定义内容生成sendStatistics已调用完成（type=0）");
+            }
+        }
+    }
 
     /**
      * 生成文件并处理差异

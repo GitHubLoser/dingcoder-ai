@@ -58,19 +58,25 @@ public class FileDiffService {
      */
     public FileDiffInfo checkFileDifferences(String className, String newContent, VirtualFile targetDir) {
         try {
-            String fileName = className + ".java";
+            // ✅ 修复：className已经包含.java后缀，不需要再添加
+            String fileName = className;
+            LOG.info("[FileDiffService] 检查文件: " + fileName + ", 目标目录: " + targetDir.getPath());
             VirtualFile existingFile = targetDir.findChild(fileName);
+            LOG.info("[FileDiffService] 现有文件: " + (existingFile != null ? existingFile.getPath() : "不存在"));
             
             if (existingFile == null) {
                 // 文件不存在，没有差异
+                LOG.info("[FileDiffService] 文件不存在，返回hasDifferences=false");
                 return new FileDiffInfo(fileName, targetDir.getPath() + "/" + fileName, "", newContent, false);
             }
 
             // 读取现有文件内容
             String existingContent = new String(existingFile.contentsToByteArray(), existingFile.getCharset());
+            LOG.info("[FileDiffService] 现有文件内容长度: " + existingContent.length());
             
-            // 比较内容是否有差异
-            boolean hasDifferences = !normalizeContent(existingContent).equals(normalizeContent(newContent));
+            // ✅ 修改：只要文件存在就显示差异窗口，不管内容是否相同
+            boolean hasDifferences = true; // 文件存在就认为有差异
+            LOG.info("[FileDiffService] 文件存在，设置hasDifferences=true");
             
             return new FileDiffInfo(
                 fileName,
@@ -104,6 +110,7 @@ public class FileDiffService {
             String newContent = newContents.get(i);
             
             FileDiffInfo diffInfo = checkFileDifferences(className, newContent, targetDir);
+            // ✅ 修改：只要文件存在就添加到差异列表，不管内容是否相同
             if (diffInfo.hasDifferences()) {
                 diffInfos.add(diffInfo);
             }
