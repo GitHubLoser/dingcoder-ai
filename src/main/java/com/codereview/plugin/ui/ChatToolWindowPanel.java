@@ -877,18 +877,28 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                                 // 根据用户选择处理文件
                                 switch (resolution.getType()) {
                                     case ORIGINAL:
-                                        // 保留现有文件，但标记为已生成
-                                        message.setGenerated(true);
-                                        generateButton.setText("✓ 已生成");
-                                        generateButton.setEnabled(false);
-                                        generateButton.setBackground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
-                                        break;
-                                    case NEW:
-                                        // 使用新内容生成文件
+                                        // ✅ 修复：使用编辑后的内容生成文件
                                         String finalContent = resolution.getContent();
                                         if (finalContent != null && !finalContent.trim().isEmpty()) {
                                             // 使用自定义内容生成文件
                                             generateFileWithCustomContent(message, finalContent, targetDir);
+                                            generateButton.setText("✓ 已生成");
+                                            generateButton.setEnabled(false);
+                                            generateButton.setBackground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
+                                        } else {
+                                            // 如果内容为空，标记为已生成但不实际生成文件
+                                            message.setGenerated(true);
+                                            generateButton.setText("✓ 已生成");
+                                            generateButton.setEnabled(false);
+                                            generateButton.setBackground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
+                                        }
+                                        break;
+                                    case NEW:
+                                        // 使用新内容生成文件
+                                        String newContent = resolution.getContent();
+                                        if (newContent != null && !newContent.trim().isEmpty()) {
+                                            // 使用自定义内容生成文件
+                                            generateFileWithCustomContent(message, newContent, targetDir);
                                             generateButton.setText("✓ 已生成");
                                             generateButton.setEnabled(false);
                                             generateButton.setBackground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
@@ -1704,15 +1714,22 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                     // 根据用户选择处理文件
                     switch (resolution.getType()) {
                         case ORIGINAL:
-                            // 保留现有文件，但标记为已生成
-                            message.setGenerated(true);
-                            break;
-                        case NEW:
-                            // 使用新内容生成文件
+                            // ✅ 修复：使用编辑后的内容生成文件
                             String finalContent = resolution.getContent();
                             if (finalContent != null && !finalContent.trim().isEmpty()) {
                                 // 使用自定义内容生成文件
                                 generateFileWithCustomContent(message, finalContent, targetDir);
+                            } else {
+                                // 如果内容为空，标记为已生成但不实际生成文件
+                                message.setGenerated(true);
+                            }
+                            break;
+                        case NEW:
+                            // 使用新内容生成文件
+                            String newContent = resolution.getContent();
+                            if (newContent != null && !newContent.trim().isEmpty()) {
+                                // 使用自定义内容生成文件
+                                generateFileWithCustomContent(message, newContent, targetDir);
                             } else {
                                 // 如果内容为空，标记为已生成但不实际生成文件
                                 message.setGenerated(true);
