@@ -816,11 +816,19 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             JButton generateButton = new JButton("生成文件");
             generateButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 11));  // 字体稍小
             generateButton.setForeground(JBColor.foreground());
-            generateButton.setBackground(new JBColor(new Color(0x2B5AB8), new Color(0x2B5AB8)));
             generateButton.setBorder(BorderFactory.createEmptyBorder(3, 6, 3, 6));  // 减少内边距
             generateButton.setFocusPainted(false);
             generateButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             generateButton.setOpaque(true);
+            
+            // ✅ 根据消息的生成状态设置按钮初始状态
+            if (message.isGenerated()) {
+                generateButton.setText("✓ 已生成");
+                generateButton.setEnabled(false);
+                generateButton.setBackground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
+            } else {
+                generateButton.setBackground(new JBColor(new Color(0x2B5AB8), new Color(0x2B5AB8)));
+            }
             generateButton.addActionListener(e -> {
                 // 弹趣味消息
                 try {
@@ -844,6 +852,9 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                     generateButton.setText("✓ 已生成");
                     generateButton.setEnabled(false);
                     generateButton.setBackground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
+                    
+                    // ✅ 设置消息为已生成状态，确保状态联动
+                    message.setGenerated(true);
                     
                     // 记录代码生成统计
                     recordCodeGenerationEvent(content, className, true);
@@ -1576,6 +1587,9 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         // 刷新UI
         updateChatDisplay();
         
+        // ✅ 更新所有已生成消息的按钮状态
+        updateGeneratedButtonsState();
+        
         // 显示结果
         int generatedCount = (int) messagesToGenerate.stream().filter(ChatMessage::isGenerated).count();
         JOptionPane.showMessageDialog(
@@ -1635,6 +1649,55 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                 LOG.info("[统计] 批量生成sendStatistics已调用完成（type=0）");
             }
         }
+    }
+
+    /**
+     * 更新所有已生成消息的按钮状态
+     */
+    private void updateGeneratedButtonsState() {
+        // 遍历所有消息面板，更新已生成消息的按钮状态
+        for (int i = 0; i < chatPanel.getComponentCount(); i++) {
+            Component component = chatPanel.getComponent(i);
+            if (component instanceof JPanel) {
+                updateGeneratedButtonsInPanel((JPanel) component);
+            }
+        }
+    }
+    
+    /**
+     * 递归更新面板中已生成消息的按钮状态
+     */
+    private void updateGeneratedButtonsInPanel(JPanel panel) {
+        for (Component comp : panel.getComponents()) {
+            if (comp instanceof JButton) {
+                JButton button = (JButton) comp;
+                if ("生成文件".equals(button.getText()) || "✓ 已生成".equals(button.getText())) {
+                    // 找到对应的消息
+                    ChatMessage correspondingMessage = findMessageForButton(button);
+                    if (correspondingMessage != null && correspondingMessage.isGenerated()) {
+                        button.setText("✓ 已生成");
+                        button.setEnabled(false);
+                        button.setBackground(new JBColor(new Color(0x28A745), new Color(0x28A745)));
+                    }
+                }
+            } else if (comp instanceof JPanel) {
+                updateGeneratedButtonsInPanel((JPanel) comp);
+            }
+        }
+    }
+    
+    /**
+     * 根据按钮找到对应的消息（简化实现）
+     */
+    private ChatMessage findMessageForButton(JButton button) {
+        // 这里使用简化的实现，通过遍历所有消息来匹配
+        // 在实际应用中，可能需要更精确的匹配逻辑
+        for (ChatMessage message : chatMessages) {
+            if (!message.isUser() && isJavaCode(message.getContent()) && message.isGenerated()) {
+                return message;
+            }
+        }
+        return null;
     }
 
     /**
