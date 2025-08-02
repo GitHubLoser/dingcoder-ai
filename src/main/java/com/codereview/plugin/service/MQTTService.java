@@ -43,7 +43,7 @@ public final class MQTTService {
     private final ObjectMapper objectMapper = new ObjectMapper();
     
     // ✅ 新增：网络重连管理
-    private static final int MAX_RECONNECT_ATTEMPTS = 10; // 最大重连次数
+    private static final int MAX_RECONNECT_ATTEMPTS = 3; // 最大重连次数
     private static final long INITIAL_RECONNECT_DELAY = 1000; // 初始重连延迟（1秒）
     private static final long MAX_RECONNECT_DELAY = 300000; // 最大重连延迟（5分钟）
     private volatile int reconnectAttempts = 0; // 当前重连次数
