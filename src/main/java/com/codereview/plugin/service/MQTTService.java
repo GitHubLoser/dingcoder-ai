@@ -580,7 +580,8 @@ public final class MQTTService {
         boolean connected = this.isConnected && mqttClient != null && mqttClient.isConnected();
         
         // ✅ 改进：如果检测到连接断开，使用智能重连策略
-        if (!connected && currentUserSid != null && !isReconnecting) {
+        // ❌ 修复：避免在已达到重连限制时继续触发重连
+        if (!connected && currentUserSid != null && !isReconnecting && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
             LOG.warn("检测到MQTT连接断开，尝试重新连接...");
             try {
                 // 使用智能重连策略，而不是简单的延迟重连
