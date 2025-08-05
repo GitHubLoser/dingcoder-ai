@@ -54,6 +54,11 @@ public class MainToolWindowPanel extends JBPanel<MainToolWindowPanel> {
         });
     }
     
+    /**
+     * 初始化用户界面组件
+     * 设置背景色，创建头部面板、标签页面板和登录提示面板
+     * 根据用户登录状态添加相应组件到主面板
+     */
     private void initializeUI() {
         setBackground(BACKGROUND_COLOR);
         
@@ -91,6 +96,10 @@ public class MainToolWindowPanel extends JBPanel<MainToolWindowPanel> {
         });
     }
     
+    /**
+     * 创建头部面板，包含标题和用户操作区域
+     * 头部面板分为左右两部分：左侧显示应用标题，右侧显示用户登录/登出相关控件
+     */
     private void createHeaderPanel() {
         headerPanel = new JBPanel<>(new BorderLayout());
         headerPanel.setBackground(HEADER_COLOR);
@@ -123,6 +132,10 @@ public class MainToolWindowPanel extends JBPanel<MainToolWindowPanel> {
         headerPanel.add(rightPanel, BorderLayout.EAST);
     }
     
+    /**
+     * 创建标签页面板，包含代码生成和代码审查两个标签页
+     * 每个标签页对应一个功能面板：代码生成面板和代码审查面板
+     */
     private void createTabbedPane() {
         tabbedPane = new JBTabbedPane();
         
@@ -145,6 +158,10 @@ public class MainToolWindowPanel extends JBPanel<MainToolWindowPanel> {
         }
     }
     
+    /**
+     * 创建未登录时的提示面板
+     * 包含图标、提示文字和登录按钮，引导用户进行登录操作
+     */
     private void createLoginPromptPanel() {
         loginPromptPanel = new JBPanel<>(new BorderLayout());
         loginPromptPanel.setBackground(BACKGROUND_COLOR);
@@ -189,6 +206,11 @@ public class MainToolWindowPanel extends JBPanel<MainToolWindowPanel> {
         loginPromptPanel.add(centerPanel, BorderLayout.CENTER);
     }
     
+    /**
+     * 登录按钮点击事件处理方法
+     * 显示登录对话框，用户登录成功后更新UI状态
+     * @param e 点击事件对象
+     */
     private void onLoginButtonClick(ActionEvent e) {
         // 显示登录对话框
         ApplicationManager.getApplication().invokeLater(() -> {
@@ -199,6 +221,11 @@ public class MainToolWindowPanel extends JBPanel<MainToolWindowPanel> {
         });
     }
     
+    /**
+     * 用户下拉框操作事件处理方法
+     * 处理用户选择"退出登录"选项的逻辑
+     * @param e 下拉框选择事件对象
+     */
     private void onUserDropdownAction(ActionEvent e) {
         JComboBox<?> source = (JComboBox<?>) e.getSource();
         String selectedItem = (String) source.getSelectedItem();
@@ -217,6 +244,11 @@ public class MainToolWindowPanel extends JBPanel<MainToolWindowPanel> {
     private boolean lastLoginState = false;
     private String lastUserName = null;
     
+    /**
+     * 更新UI状态
+     * 根据用户登录状态显示或隐藏相关组件，更新用户界面
+     * 包括更新头部面板的登录按钮和用户下拉框，以及主内容区域的显示内容
+     */
     public void updateUIState() {
         boolean isLoggedIn = authService.isLoggedIn();
         String currentUser = authService.getCurrentUser();
@@ -303,6 +335,10 @@ public class MainToolWindowPanel extends JBPanel<MainToolWindowPanel> {
         }
     }
 
+    /**
+     * 释放资源
+     * 清空面板内容，释放子面板资源，并断开MQTT连接
+     */
     public void dispose() {
         try {
             // 先清空面板内容
