@@ -23,37 +23,83 @@ public class TokenRefreshMqttTestAction extends AnAction {
         try {
             LOG.info("用户点击了Token刷新+MQTT重连测试");
             
-            // 显示开始提示
-            Messages.showInfoMessage(e.getProject(), 
-                "开始测试Token刷新和MQTT重连功能...\n" +
-                "测试将持续约10秒，请查看日志输出。", 
-                "测试开始");
+            // 显示测试选择对话框
+            String[] options = {"MQTT重连内存泄漏测试", "Token刷新+MQTT重连测试", "取消"};
+            int choice = Messages.showChooseDialog(e.getProject(), 
+                "请选择要执行的测试类型：\n\n" +
+                "1. MQTT重连内存泄漏测试：专门测试MQTT重连是否会导致内存泄漏\n" +
+                "2. Token刷新+MQTT重连测试：测试Token刷新和MQTT重连功能\n\n" +
+                "测试过程请查看IDEA的日志输出。", 
+                "选择测试类型", 
+                null, 
+                options, 
+                options[0]);
             
-            // 在新线程中执行测试，避免阻塞UI
-            new Thread(() -> {
-                try {
-                    // 执行Token刷新和MQTT重连测试
-                    TokenQuickTestUtils.testTokenRefreshAndMqttReconnect();
-                    
-                    // 测试完成后显示结果
-                    com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
-                        Messages.showInfoMessage(e.getProject(), 
-                            "Token刷新和MQTT重连测试完成！\n" +
-                            "请查看IDEA的日志输出了解详细信息。", 
-                            "测试完成");
-                    });
-                    
-                } catch (Exception ex) {
-                    LOG.error("Token刷新和MQTT重连测试时发生错误", ex);
-                    com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
-                        Messages.showErrorDialog(e.getProject(), 
-                            "测试失败: " + ex.getMessage(), "错误");
-                    });
-                }
-            }, "TokenRefreshMqttTest").start();
+            if (choice == 0) {
+                // MQTT重连内存泄漏测试
+                LOG.info("用户选择了MQTT重连内存泄漏测试");
+                
+                Messages.showInfoMessage(e.getProject(), 
+                    "开始MQTT重连内存泄漏测试...\n" +
+                    "测试将模拟10次断开重连，请查看日志输出。", 
+                    "测试开始");
+                
+                new Thread(() -> {
+                    try {
+                        TokenQuickTestUtils.testMqttReconnectMemoryLeak();
+                        
+                        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
+                            Messages.showInfoMessage(e.getProject(), 
+                                "MQTT重连内存泄漏测试完成！\n" +
+                                "请查看IDEA的日志输出了解详细信息。", 
+                                "测试完成");
+                        });
+                        
+                    } catch (Exception ex) {
+                        LOG.error("MQTT重连内存泄漏测试时发生错误", ex);
+                        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
+                            Messages.showErrorDialog(e.getProject(), 
+                                "测试失败: " + ex.getMessage(), "错误");
+                        });
+                    }
+                }, "MqttMemoryLeakTest").start();
+                
+            } else if (choice == 1) {
+                // Token刷新+MQTT重连测试
+                LOG.info("用户选择了Token刷新+MQTT重连测试");
+                
+                Messages.showInfoMessage(e.getProject(), 
+                    "开始测试Token刷新和MQTT重连功能...\n" +
+                    "测试将持续约10秒，请查看日志输出。", 
+                    "测试开始");
+                
+                new Thread(() -> {
+                    try {
+                        TokenQuickTestUtils.testTokenRefreshAndMqttReconnect();
+                        
+                        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
+                            Messages.showInfoMessage(e.getProject(), 
+                                "Token刷新和MQTT重连测试完成！\n" +
+                                "请查看IDEA的日志输出了解详细信息。", 
+                                "测试完成");
+                        });
+                        
+                    } catch (Exception ex) {
+                        LOG.error("Token刷新和MQTT重连测试时发生错误", ex);
+                        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
+                            Messages.showErrorDialog(e.getProject(), 
+                                "测试失败: " + ex.getMessage(), "错误");
+                        });
+                    }
+                }, "TokenRefreshMqttTest").start();
+                
+            } else {
+                // 用户取消
+                LOG.info("用户取消了测试");
+            }
             
         } catch (Exception ex) {
-            LOG.error("启动Token刷新和MQTT重连测试时发生错误", ex);
+            LOG.error("启动测试时发生错误", ex);
             Messages.showErrorDialog(e.getProject(), 
                 "启动测试失败: " + ex.getMessage(), "错误");
         }

@@ -233,4 +233,113 @@ public class TokenQuickTestUtils {
         
         LOG.info("=== Token刷新和MQTT重连测试完成 ===");
     }
+    
+    /**
+     * 测试MQTT重连内存泄漏
+     */
+    public static void testMqttReconnectMemoryLeak() {
+        LOG.info("=== 开始MQTT重连内存泄漏测试 ===");
+        
+        try {
+            com.codereview.plugin.service.MQTTService mqttService = com.codereview.plugin.service.MQTTService.getInstance();
+            
+            // 1. 记录初始线程数
+            LOG.info("1. 记录初始状态");
+            int initialThreadCount = getActiveThreadCount();
+            LOG.info("初始活跃线程数: " + initialThreadCount);
+            
+            // 2. 获取初始MQTT状态
+            boolean initialConnected = mqttService.isConnected();
+            LOG.info("初始MQTT连接状态: " + (initialConnected ? "已连接" : "未连接"));
+            
+            // 3. 模拟多次断开重连
+            LOG.info("2. 开始模拟多次断开重连（10次）");
+            for (int i = 1; i <= 10; i++) {
+                LOG.info("--- 第" + i + "次断开重连测试 ---");
+                
+                // 强制断开连接
+                LOG.info("强制断开MQTT连接...");
+                mqttService.disconnect();
+                
+                // 等待断开完成
+                Thread.sleep(1000);
+                
+                // 检查断开状态
+                boolean disconnected = !mqttService.isConnected();
+                LOG.info("断开状态: " + (disconnected ? "成功" : "失败"));
+                
+                // 触发重连
+                LOG.info("触发重连...");
+                mqttService.manualReconnect();
+                
+                // 等待重连完成
+                Thread.sleep(3000);
+                
+                // 检查重连状态
+                boolean reconnected = mqttService.isConnected();
+                LOG.info("重连状态: " + (reconnected ? "成功" : "失败"));
+                
+                // 记录当前线程数
+                int currentThreadCount = getActiveThreadCount();
+                LOG.info("当前活跃线程数: " + currentThreadCount + " (变化: " + (currentThreadCount - initialThreadCount) + ")");
+                
+                // 如果线程数增长过多，发出警告
+                if (currentThreadCount - initialThreadCount > 5) {
+                    LOG.warn("⚠️ 检测到线程数异常增长！");
+                }
+            }
+            
+            // 4. 最终检查
+            LOG.info("3. 最终检查");
+            int finalThreadCount = getActiveThreadCount();
+            LOG.info("最终活跃线程数: " + finalThreadCount);
+            LOG.info("线程数变化: " + (finalThreadCount - initialThreadCount));
+            
+            boolean finalConnected = mqttService.isConnected();
+            LOG.info("最终MQTT连接状态: " + (finalConnected ? "已连接" : "未连接"));
+            
+            // 5. 强制清理
+            LOG.info("4. 强制清理资源");
+            mqttService.forceCleanup();
+            
+            // 6. 清理后检查
+            Thread.sleep(2000);
+            int afterCleanupThreadCount = getActiveThreadCount();
+            LOG.info("清理后活跃线程数: " + afterCleanupThreadCount);
+            LOG.info("清理后线程数变化: " + (afterCleanupThreadCount - initialThreadCount));
+            
+            // 7. 结果评估
+            LOG.info("5. 测试结果评估");
+            if (afterCleanupThreadCount - initialThreadCount <= 2) {
+                LOG.info("✅ MQTT重连内存泄漏测试通过！线程数增长正常");
+            } else {
+                LOG.warn("⚠️ MQTT重连可能存在内存泄漏！线程数增长异常");
+            }
+            
+        } catch (Exception e) {
+            LOG.error("MQTT重连内存泄漏测试过程中出错", e);
+        }
+        
+        LOG.info("=== MQTT重连内存泄漏测试完成 ===");
+    }
+    
+    /**
+     * 获取活跃线程数（只统计MQTT相关线程）
+     */
+    private static int getActiveThreadCount() {
+        Thread[] threads = new Thread[Thread.activeCount()];
+        int threadCount = Thread.enumerate(threads);
+        
+        int mqttThreadCount = 0;
+        for (int i = 0; i < threadCount; i++) {
+            String threadName = threads[i].getName();
+            if (threadName.contains("MQTT") || 
+                threadName.contains("Reconnect") || 
+                threadName.contains("TokenRefresh")) {
+                mqttThreadCount++;
+            }
+        }
+        
+        return mqttThreadCount;
+    }
 } 

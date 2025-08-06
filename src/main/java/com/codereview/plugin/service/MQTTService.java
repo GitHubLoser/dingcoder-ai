@@ -51,6 +51,10 @@ public final class MQTTService {
     private volatile boolean isReconnecting = false; // 是否正在重连
     private volatile String lastConnectionError = null; // 最后一次连接错误
     
+    // ✅ 新增：线程管理，避免内存泄漏
+    private volatile Thread reconnectThread = null; // 当前重连线程
+    private volatile boolean shouldStopReconnect = false; // 是否应该停止重连
+    
     // Project级别的回调映射
     private final Map<Project, Map<String, Consumer<String>>> projectCallbacks = new ConcurrentHashMap<>();
     
@@ -406,8 +410,9 @@ public final class MQTTService {
      * 处理连接丢失事件
      */
     private void handleConnectionLoss(Throwable cause) {
-        if (isReconnecting) {
-            LOG.info("[MQTT] 重连已在进行中，跳过本次重连");
+        // ✅ 改进：使用单一线程进行重连，避免创建过多线程
+        if (reconnectThread != null && reconnectThread.isAlive()) {
+            LOG.info("[MQTT] 重连已在进行中，跳过本次重连请求");
             return;
         }
         
@@ -426,13 +431,19 @@ public final class MQTTService {
         
         LOG.info("[MQTT] 开始第" + reconnectAttempts + "次重连，延迟" + delay + "毫秒");
         
-        // 异步重连
-        new Thread(() -> {
+        // ✅ 改进：使用单一线程进行重连，避免创建过多线程
+        shouldStopReconnect = false;
+        reconnectThread = new Thread(() -> {
             try {
                 isReconnecting = true;
                 lastReconnectTime = System.currentTimeMillis();
                 
                 Thread.sleep(delay);
+                
+                if (shouldStopReconnect) {
+                    LOG.info("[MQTT] 重连被取消");
+                    return;
+                }
                 
                 if (currentUserSid != null) {
                     LOG.info("[MQTT] 执行重连操作...");
@@ -448,7 +459,9 @@ public final class MQTTService {
             } finally {
                 isReconnecting = false;
             }
-        }, "MQTT-Reconnect-" + reconnectAttempts).start();
+        }, "MQTT-Reconnect-" + reconnectAttempts);
+        reconnectThread.setDaemon(true); // 设置为守护线程
+        reconnectThread.start();
     }
     
     /**
@@ -475,6 +488,19 @@ public final class MQTTService {
         lastReconnectTime = 0;
         isReconnecting = false;
         lastConnectionError = null;
+        
+        // ✅ 改进：清理重连线程
+        shouldStopReconnect = true;
+        if (reconnectThread != null && reconnectThread.isAlive()) {
+            reconnectThread.interrupt();
+            try {
+                reconnectThread.join(1000); // 等待最多1秒
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        reconnectThread = null;
+        
         LOG.info("[MQTT] 重连状态已重置");
     }
     
@@ -514,46 +540,55 @@ public final class MQTTService {
     }
     
     /**
-     * 强制清理所有资源（用于插件卸载时）
+     * 强制清理所有资源
      */
     public void forceCleanup() {
-        LOG.info("开始强制清理MQTT服务资源");
-        try {
-            synchronized (messageLock) {
-                // 断开连接
-                if (mqttClient != null && mqttClient.isConnected()) {
-                    try {
-                        // 设置较短的超时时间，避免长时间阻塞
-                        mqttClient.disconnect(1000); // 1秒超时
-                        LOG.info("强制断开MQTT连接");
-                    } catch (Exception e) {
-                        LOG.error("强制断开MQTT连接时出错", e);
-                    }
-                }
-                
-                // 关闭客户端
-                if (mqttClient != null) {
-                    try {
-                        mqttClient.close();
-                        LOG.info("强制关闭MQTT客户端");
-                    } catch (Exception e) {
-                        LOG.error("强制关闭MQTT客户端时出错", e);
-                    }
-                    mqttClient = null;
-                }
-                
-                // 清理所有状态
-                isConnected = false;
-                currentUserSid = null;
-                topicCallbacks.clear();
-                pendingMessages.clear();
-                lastCodeGenerationMsgMappingMap = null;
-                
-                LOG.info("MQTT服务资源清理完成");
+        LOG.info("[MQTT] 开始强制清理资源");
+        
+        // ✅ 改进：停止重连线程
+        shouldStopReconnect = true;
+        if (reconnectThread != null && reconnectThread.isAlive()) {
+            reconnectThread.interrupt();
+            try {
+                reconnectThread.join(1000); // 等待最多1秒
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
-        } catch (Exception e) {
-            LOG.error("强制清理MQTT服务资源时出错", e);
         }
+        reconnectThread = null;
+        
+        // 重置重连状态
+        reconnectAttempts = 0;
+        lastReconnectTime = 0;
+        isReconnecting = false;
+        lastConnectionError = null;
+        
+        // 断开MQTT连接
+        if (mqttClient != null) {
+            try {
+                if (mqttClient.isConnected()) {
+                    mqttClient.disconnect();
+                }
+                mqttClient.close();
+            } catch (Exception e) {
+                LOG.warn("[MQTT] 断开连接时出错", e);
+            }
+            mqttClient = null;
+        }
+        
+        isConnected = false;
+        currentUserSid = null;
+        
+        // 清理回调映射
+        projectCallbacks.clear();
+        topicCallbacks.clear();
+        
+        // 清理消息队列
+        synchronized (messageLock) {
+            pendingMessages.clear();
+        }
+        
+        LOG.info("[MQTT] 资源清理完成");
     }
 
     /**
