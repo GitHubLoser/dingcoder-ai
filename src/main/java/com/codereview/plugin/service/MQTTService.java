@@ -413,9 +413,10 @@ public final class MQTTService {
         
         // 检查重连次数限制
         if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-            LOG.error("[MQTT] 已达到最大重连次数(" + MAX_RECONNECT_ATTEMPTS + ")，停止重连。请检查网络连接或手动重连。");
-            showNetworkErrorNotification("MQTT连接失败", 
-                "已达到最大重连次数(" + MAX_RECONNECT_ATTEMPTS + ")，请检查网络连接或重新登录。");
+            LOG.error("[MQTT] 已达到最大重连次数(" + MAX_RECONNECT_ATTEMPTS + ")，停止重连。网络恢复后将自动重连。");
+            // 移除弹框，静默处理，避免打断用户工作
+//            showNetworkErrorNotification("MQTT连接失败",
+//                    "已达到最大重连次数(" + MAX_RECONNECT_ATTEMPTS + ")，请检查网络连接或重新登录。");
             return;
         }
         
@@ -464,24 +465,6 @@ public final class MQTTService {
         // 添加随机抖动，避免多个客户端同时重连
         long jitter = (long)(Math.random() * 1000);
         return delay + jitter;
-    }
-    
-    /**
-     * 显示网络错误通知
-     */
-    private void showNetworkErrorNotification(String title, String message) {
-        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
-            try {
-                javax.swing.JOptionPane.showMessageDialog(
-                    null,
-                    message,
-                    title,
-                    javax.swing.JOptionPane.WARNING_MESSAGE
-                );
-            } catch (Exception e) {
-                LOG.error("显示网络错误通知时出错", e);
-            }
-        });
     }
     
     /**
