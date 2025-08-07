@@ -38,18 +38,12 @@ public final class MQTTService {
     public static final String FUNCTION_CODE_REVIEW = "code_review";
 
     private MqttClient mqttClient;
-    private boolean isConnected = false;
     private String currentUserSid;
+    private String currentUserId; // 新增：保存当前用户ID
     private final ObjectMapper objectMapper = new ObjectMapper();
     
-    // ✅ 简化：网络重连管理
-    private static final int MAX_RECONNECT_ATTEMPTS = 1; // 简化：只重连一次
-    private volatile boolean isReconnecting = false; // 是否正在重连
+    // ✅ 简化：移除自定义重连相关变量，使用Paho自动重连
     private volatile String lastConnectionError = null; // 最后一次连接错误
-    
-    // ✅ 简化：线程管理
-    private volatile Thread reconnectThread = null; // 当前重连线程
-    private volatile boolean shouldStopReconnect = false; // 是否应该停止重连
     
 
     
@@ -87,6 +81,7 @@ public final class MQTTService {
      */
     public void connectAndSubscribe(String userId, String userSid) {
         this.currentUserSid = userSid;
+        this.currentUserId = userId; // 保存用户ID
 
         // ✅ 简化：如果已有连接，直接使用现有连接
         if (mqttClient != null && mqttClient.isConnected()) {
@@ -107,7 +102,7 @@ public final class MQTTService {
             // 配置连接参数
             MqttConnectOptions options = new MqttConnectOptions();
             options.setCleanSession(true);
-            options.setAutomaticReconnect(true);
+            options.setAutomaticReconnect(true); // ✅ 建议：使用Paho自动重连，更简单可靠
             options.setUserName(USERNAME);
             options.setPassword(PASSWORD.toCharArray());
             options.setConnectionTimeout(30); // 减少连接超时时间
@@ -120,15 +115,75 @@ public final class MQTTService {
                 @Override
                 public void connectionLost(Throwable cause) {
                     LOG.warn("MQTT连接丢失，原因: " + cause.getMessage(), cause);
-                    isConnected = false;
                     lastConnectionError = cause.getMessage();
                     
-                    // ✅ 改进：智能重连策略
-                    if (!isReconnecting) {
-                        handleConnectionLoss(cause);
-                    } else {
-                        LOG.info("[MQTT] 重连已在进行中，跳过本次重连请求");
-                    }
+                    // ✅ 修复：Paho自动重连后需要重新订阅
+                    LOG.info("[MQTT] 连接丢失，Paho将自动重连，重连后需要重新订阅");
+                    
+                    // 延迟检查重连是否成功并重新订阅
+                    new Thread(() -> {
+                        try {
+                            // 等待Paho重连完成
+                            Thread.sleep(10000); // 等待10秒，给Paho更多重连时间
+                            
+                            // 检查连接是否恢复
+                            boolean connected = isConnected();
+                            LOG.info("[MQTT] 重连检查 - 连接状态: " + (connected ? "已连接" : "未连接"));
+                            
+                            if (connected) {
+                                LOG.info("[MQTT] 检测到Paho重连成功，检查用户信息并重新订阅主题");
+                                
+                                // ✅ 修复：从AuthService重新获取用户信息，避免时序问题
+                                String userSid = null;
+                                try {
+                                    // 尝试从AuthService获取当前用户SID
+                                    com.codereview.plugin.auth.AuthService authService = 
+                                        com.codereview.plugin.auth.AuthService.getInstance();
+                                    if (authService != null) {
+                                        userSid = authService.getUserSid();
+                                        LOG.info("[MQTT] 从AuthService获取到用户SID: " + userSid);
+                                    }
+                                } catch (Exception e) {
+                                    LOG.warn("[MQTT] 从AuthService获取用户SID失败", e);
+                                }
+                                
+                                // 如果从AuthService获取失败，使用当前保存的SID
+                                if (userSid == null || userSid.isEmpty()) {
+                                    userSid = currentUserSid;
+                                    LOG.info("[MQTT] 使用当前保存的用户SID: " + userSid);
+                                }
+                                
+                                if (userSid != null && !userSid.isEmpty()) {
+                                    try {
+                                        // 重新订阅代码生成主题
+                                        String codeGenTopic = TOPIC_PREFIX + userSid;
+                                        mqttClient.subscribe(codeGenTopic);
+                                        LOG.info("已重新订阅代码生成 Topic: " + codeGenTopic);
+                                        
+                                        // 重新订阅代码审查主题
+                                        String codeReviewTopic = TOPIC_PREFIX + userSid + "/" + FUNCTION_CODE_REVIEW;
+                                        mqttClient.subscribe(codeReviewTopic);
+                                        LOG.info("已重新订阅代码审查 Topic: " + codeReviewTopic);
+                                        
+                                        LOG.info("[MQTT] 重连后主题订阅完成");
+                                    } catch (Exception e) {
+                                        LOG.error("[MQTT] 重连后重新订阅主题失败", e);
+                                    }
+                                } else {
+                                    LOG.warn("[MQTT] 无法获取用户SID，跳过重新订阅");
+                                }
+                            } else {
+                                LOG.warn("[MQTT] Paho重连失败，跳过重新订阅");
+                                // 添加更详细的失败信息
+                                if (mqttClient != null) {
+                                    LOG.info("[MQTT] MQTT客户端状态 - isConnected: " + mqttClient.isConnected());
+                                }
+                                LOG.info("[MQTT] 本地连接状态 - mqttClient.isConnected: " + (mqttClient != null ? mqttClient.isConnected() : "null"));
+                            }
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }, "MQTT-Resubscribe").start();
                 }
 
                 @Override
@@ -218,8 +273,11 @@ public final class MQTTService {
             LOG.info("已连接到 MQTT Broker: " + BROKER);
             LOG.info("[MQTT] 连接建立成功。如果之前有断开，说明自动重连已恢复。");
             
-            // ✅ 新增：连接成功后重置重连状态
-            resetReconnectState();
+            // ✅ 简化：连接成功后清除错误状态
+            synchronized (this) {
+                lastConnectionError = null;
+                LOG.info("[MQTT] 连接建立成功");
+            }
 
             // 订阅代码生成主题（保持原有格式）
             String codeGenTopic = TOPIC_PREFIX + userSid;
@@ -231,13 +289,12 @@ public final class MQTTService {
             mqttClient.subscribe(codeReviewTopic, 2); // QoS 2
             LOG.info("已订阅代码审查 Topic: " + codeReviewTopic);
 
-            isConnected = true;
+            // 连接成功，清除错误状态
             
 
 
         } catch (Exception e) {
             LOG.error("MQTT连接失败", e);
-            isConnected = false;
             lastConnectionError = e.getMessage();
             
             // ✅ 新增：根据错误类型提供更详细的日志
@@ -426,8 +483,8 @@ public final class MQTTService {
                     mqttClient = null;
                 }
                 
-                isConnected = false;
                 currentUserSid = null;
+                currentUserId = null;
                 topicCallbacks.clear();
                 // 清空缓存消息
                 pendingMessages.clear();
@@ -440,99 +497,24 @@ public final class MQTTService {
         }
     }
     
-    /**
-     * 处理连接丢失事件
-     */
-    private void handleConnectionLoss(Throwable cause) {
-        // ✅ 改进：避免重复重连和无效重连
-        if (isReconnecting) {
-            LOG.info("[MQTT] 重连已在进行中，跳过本次重连请求");
-            return;
-        }
-        
-        // ✅ 新增：检查是否是客户端ID冲突等不需要重连的错误
-        if (cause.getMessage() != null) {
-            if (cause.getMessage().contains("Client ID") || 
-                cause.getMessage().contains("already connected") ||
-                cause.getMessage().contains("connect in progress")) {
-                LOG.warn("[MQTT] 检测到客户端ID冲突或重复连接，跳过重连");
-                return;
-            }
-        }
-        
-        LOG.info("[MQTT] 检测到连接丢失，开始重连，错误: " + cause.getMessage());
-        
-        // ✅ 改进：添加重连错误处理和状态检查
-        shouldStopReconnect = false;
-        reconnectThread = new Thread(() -> {
-            try {
-                isReconnecting = true;
-                
-                if (currentUserSid != null) {
-                    LOG.info("[MQTT] 执行重连操作...");
-                    connectAndSubscribe("reconnect", currentUserSid);
-                    
-                    // ✅ 简化：验证重连是否成功
-                    Thread.sleep(1000); // 等待1秒让连接稳定
-                    if (isConnected()) {
-                        LOG.info("[MQTT] 重连成功");
-                        resetReconnectState();
-                    } else {
-                        LOG.error("[MQTT] 重连失败，连接状态检查失败");
-                    }
-                } else {
-                    LOG.warn("[MQTT] 无法重连：用户SID为空");
-                }
-            } catch (Exception e) {
-                LOG.error("[MQTT] 重连过程中发生错误", e);
-                lastConnectionError = e.getMessage();
-            } finally {
-                isReconnecting = false;
-            }
-        }, "MQTT-Reconnect");
-        reconnectThread.setDaemon(true);
-        reconnectThread.start();
-    }
+
     
 
     
-    /**
-     * 重置重连状态（连接成功时调用）
-     */
-    private void resetReconnectState() {
-        isReconnecting = false;
-        lastConnectionError = null;
-        
-        // ✅ 简化：清理重连线程
-        shouldStopReconnect = true;
-        if (reconnectThread != null && reconnectThread.isAlive()) {
-            reconnectThread.interrupt();
-            try {
-                reconnectThread.join(1000); // 等待最多1秒
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }
-        reconnectThread = null;
-        
 
-        
-        LOG.info("[MQTT] 重连状态已重置");
-    }
     
     /**
      * 手动重连（供用户主动触发）
      */
     public void manualReconnect() {
-        if (currentUserSid == null) {
-            LOG.warn("[MQTT] 无法手动重连：用户SID为空");
+        if (currentUserSid == null || currentUserId == null) {
+            LOG.warn("[MQTT] 无法手动重连：用户SID或用户ID为空");
             return;
         }
         
         LOG.info("[MQTT] 用户手动触发重连");
-        if (!isReconnecting) {
-            handleConnectionLoss(new Exception("Manual reconnect"));
-        }
+        // ✅ 简化：直接重新连接，让Paho处理重连
+        connectAndSubscribe(currentUserId, currentUserSid);
     }
     
     /**
@@ -541,7 +523,7 @@ public final class MQTTService {
     public String getConnectionStatusInfo() {
         StringBuilder info = new StringBuilder();
         info.append("MQTT连接状态: ").append(isConnected() ? "已连接" : "未连接").append("\n");
-        info.append("是否正在重连: ").append(isReconnecting).append("\n");
+        info.append("使用Paho自动重连\n");
         
         if (lastConnectionError != null) {
             info.append("最后错误: ").append(lastConnectionError).append("\n");
@@ -558,22 +540,7 @@ public final class MQTTService {
     public void forceCleanup() {
         LOG.info("[MQTT] 开始强制清理资源");
         
-
-        
-        // ✅ 改进：停止重连线程
-        shouldStopReconnect = true;
-        if (reconnectThread != null && reconnectThread.isAlive()) {
-            reconnectThread.interrupt();
-            try {
-                reconnectThread.join(1000); // 等待最多1秒
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }
-        reconnectThread = null;
-        
-        // 重置重连状态
-        isReconnecting = false;
+        // 重置连接状态
         lastConnectionError = null;
         
         // 断开MQTT连接
@@ -589,7 +556,6 @@ public final class MQTTService {
             mqttClient = null;
         }
         
-        isConnected = false;
         currentUserSid = null;
         
         // 清理回调映射
@@ -608,8 +574,8 @@ public final class MQTTService {
      * 检查是否已连接
      */
     public boolean isConnected() {
-        boolean connected = this.isConnected && mqttClient != null && mqttClient.isConnected();
-        return connected;
+        // ✅ 简化：直接使用Paho客户端的连接状态
+        return mqttClient != null && mqttClient.isConnected();
     }
     
     /**
@@ -618,16 +584,38 @@ public final class MQTTService {
     public boolean checkAndReconnect() {
         boolean connected = isConnected();
         
-        if (!connected && currentUserSid != null && !isReconnecting) {
+        if (!connected && currentUserSid != null) {
             LOG.warn("检测到MQTT连接断开，尝试重新连接...");
             try {
-                handleConnectionLoss(new Exception("Manual connection check detected disconnect"));
+                // ✅ 简化：直接重新连接，让Paho处理重连
+                connectAndSubscribe(currentUserId, currentUserSid);
             } catch (Exception e) {
                 LOG.error("MQTT重连失败", e);
             }
         }
         
         return connected;
+    }
+    
+    /**
+     * 检查连接是否恢复并重新订阅（供外部调用）
+     */
+    public void checkConnectionAndResubscribe() {
+        if (isConnected() && currentUserSid != null) {
+            LOG.info("[MQTT] 检测到连接已恢复，重新订阅主题");
+            try {
+                // 重新订阅主题
+                String codeGenTopic = TOPIC_PREFIX + currentUserSid;
+                mqttClient.subscribe(codeGenTopic);
+                LOG.info("已重新订阅代码生成 Topic: " + codeGenTopic);
+                
+                String codeReviewTopic = TOPIC_PREFIX + currentUserSid + "/" + FUNCTION_CODE_REVIEW;
+                mqttClient.subscribe(codeReviewTopic);
+                LOG.info("已重新订阅代码审查 Topic: " + codeReviewTopic);
+            } catch (Exception e) {
+                LOG.error("[MQTT] 重新订阅主题失败", e);
+            }
+        }
     }
 
     /**
@@ -744,6 +732,5 @@ public final class MQTTService {
     public void clearCodeGenerationMsgMapping() {
         this.lastCodeGenerationMsgMappingMap = null;
     }
-
 
 }
