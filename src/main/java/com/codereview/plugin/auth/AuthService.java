@@ -253,11 +253,13 @@ public final class AuthService {
         try {
             MQTTService mqttService = MQTTService.getInstance();
             if (mqttService != null) {
-                boolean isConnected = mqttService.isConnected();
+                // 使用新的检查方法，避免在isConnected()中自动重连
+                boolean isConnected = mqttService.checkAndReconnect();
                 LOG.debug("MQTT连接状态检查 - 是否连接: {}", isConnected);
                 
+                // 如果重连失败，尝试重新建立连接
                 if (!isConnected && storedUsername != null && globalUserSid != null) {
-                    LOG.info("检测到MQTT连接断开，尝试重新连接...");
+                    LOG.info("MQTT重连失败，尝试重新建立连接...");
                     startMqttConnection(storedUsername, globalUserSid);
                 }
             }
@@ -346,14 +348,16 @@ public final class AuthService {
                         LOG.info("从loginResult获取的userSid: '" + userSid + "'");
                         
                         if (userSid != null && !userSid.equals("null") && !userSid.trim().isEmpty()) {
-                            LOG.info("Token刷新成功，检查全局MQTT连接状态");
-                            // ✅ 改进：统一使用全局MQTTService，确保只有一个连接
+                            LOG.info("Token刷新成功，检查MQTT连接状态");
+                            // ✅ 简化：直接检查MQTT连接，如果断了就重连一次
                             MQTTService mqttService = MQTTService.getInstance();
                             if (!mqttService.isConnected()) {
-                                LOG.info("Token刷新成功，但全局MQTT未连接，开始重连MQTT，用户SID: " + userSid);
-                                startMqttConnection(storedUsername, userSid);
+                                LOG.info("MQTT连接已断开，开始重连，用户SID: " + userSid);
+                                // 直接重连，不需要复杂的重试逻辑
+                                mqttService.connectAndSubscribe("reconnect", userSid);
+                                LOG.info("MQTT重连完成");
                             } else {
-                                LOG.info("Token刷新成功，全局MQTT已连接，无需重连");
+                                LOG.info("MQTT连接正常，无需重连");
                             }
                         } else {
                             LOG.warn("Token刷新成功，但获取用户SID失败，跳过MQTT重连。userSid: '" + userSid + "'");
