@@ -12,6 +12,7 @@ import com.codereview.plugin.service.FileDiffService;
 
 import javax.swing.*;
 import javax.swing.border.Border;
+import javax.swing.text.*;
 import java.awt.*;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
@@ -20,10 +21,13 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 简化的文件差异显示对话框
  * 两区域布局：左侧可编辑的原文件，右侧只读的新文件
+ * 支持实时差异高亮显示
  */
 public class FileDiffDialog extends DialogWrapper {
     private static final Logger LOG = Logger.getInstance(FileDiffDialog.class);
@@ -39,7 +43,18 @@ public class FileDiffDialog extends DialogWrapper {
     private int currentIndex = 0;
     private boolean[] resolvedFiles; // true表示已解决，false表示跳过
     private JTextArea[] leftTextAreas; // 左侧可编辑区域
+    private JTextArea[] rightTextAreas; // 右侧只读区域
     private String[] finalContents; // 保存每个文件的最终内容
+    
+    // 差异高亮相关
+    private static final Color DIFF_HIGHLIGHT_COLOR = new Color(255, 255, 170, 45); // 更浅更透明的黄色
+    private static final Color DIFF_BORDER_COLOR = new Color(255, 235, 180); // 更浅的黄色边框
+    private boolean[] diffHighlighted; // 标记是否已高亮显示差异
+
+    // 同步滚动相关
+    private JBScrollPane[] leftScrollPanes;
+    private JBScrollPane[] rightScrollPanes;
+    private boolean isSyncingScroll = false;
 
     public FileDiffDialog(Project project, List<FileDiffService.FileDiffInfo> diffInfos) {
         super(project);
@@ -48,7 +63,11 @@ public class FileDiffDialog extends DialogWrapper {
         this.fileDiffService = FileDiffService.getInstance(project);
         this.resolvedFiles = new boolean[diffInfos.size()];
         this.leftTextAreas = new JTextArea[diffInfos.size()];
+        this.rightTextAreas = new JTextArea[diffInfos.size()];
         this.finalContents = new String[diffInfos.size()];
+        this.diffHighlighted = new boolean[diffInfos.size()];
+        this.leftScrollPanes = new JBScrollPane[diffInfos.size()];
+        this.rightScrollPanes = new JBScrollPane[diffInfos.size()];
         
         setTitle("文件差异检测 - " + diffInfos.size() + " 个文件有差异");
         setSize(1000, 600);
@@ -76,6 +95,10 @@ public class FileDiffDialog extends DialogWrapper {
         tabbedPane.addChangeListener(e -> {
             currentIndex = tabbedPane.getSelectedIndex();
             updateButtonStates();
+            // 切换到新标签页时高亮差异
+            if (currentIndex >= 0 && !diffHighlighted[currentIndex]) {
+                highlightDifferences(currentIndex);
+            }
         });
         
         mainPanel.add(tabbedPane, BorderLayout.CENTER);
@@ -86,6 +109,11 @@ public class FileDiffDialog extends DialogWrapper {
         
         // 初始化按钮状态
         updateButtonStates();
+        
+        // 初始化第一个文件的差异高亮
+        if (diffInfos.size() > 0) {
+            SwingUtilities.invokeLater(() -> highlightDifferences(0));
+        }
         
         return mainPanel;
     }
@@ -117,8 +145,11 @@ public class FileDiffDialog extends DialogWrapper {
         diffPanel.add(leftPanel);
         
         // 右侧：新文件内容（只读，支持复制）
-        JPanel rightPanel = createRightPanel(diffInfo);
+        JPanel rightPanel = createRightPanel(diffInfo, index);
         diffPanel.add(rightPanel);
+
+        // 绑定同步滚动
+        setupSynchronizedScrolling(index);
         
         panel.add(diffPanel, BorderLayout.CENTER);
         
@@ -147,14 +178,35 @@ public class FileDiffDialog extends DialogWrapper {
         // 保存文本组件引用
         leftTextAreas[index] = textArea;
         
+        // 添加文本变化监听器，实时高亮差异
+        textArea.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            @Override
+            public void insertUpdate(javax.swing.event.DocumentEvent e) {
+                SwingUtilities.invokeLater(() -> highlightDifferences(index));
+            }
+            
+            @Override
+            public void removeUpdate(javax.swing.event.DocumentEvent e) {
+                SwingUtilities.invokeLater(() -> highlightDifferences(index));
+            }
+            
+            @Override
+            public void changedUpdate(javax.swing.event.DocumentEvent e) {
+                SwingUtilities.invokeLater(() -> highlightDifferences(index));
+            }
+        });
+        
         JBScrollPane scrollPane = new JBScrollPane(textArea);
         scrollPane.setPreferredSize(new Dimension(450, 400));
         panel.add(scrollPane, BorderLayout.CENTER);
+
+        // 保存滚动面板引用，用于同步滚动
+        leftScrollPanes[index] = scrollPane;
         
         return panel;
     }
 
-    private JPanel createRightPanel(FileDiffService.FileDiffInfo diffInfo) {
+    private JPanel createRightPanel(FileDiffService.FileDiffInfo diffInfo, int index) {
         JPanel panel = new JPanel(new BorderLayout());
         Border border = JBUI.Borders.customLine(new Color(0x28A745));
         panel.setBorder(border);
@@ -173,6 +225,9 @@ public class FileDiffDialog extends DialogWrapper {
         textArea.setLineWrap(true);
         textArea.setWrapStyleWord(true);
         textArea.setBackground(UIUtil.getPanelBackground());
+        
+        // 保存文本组件引用
+        rightTextAreas[index] = textArea;
         
         // 添加复制功能
         textArea.addMouseListener(new MouseAdapter() {
@@ -210,6 +265,9 @@ public class FileDiffDialog extends DialogWrapper {
         JBScrollPane scrollPane = new JBScrollPane(textArea);
         scrollPane.setPreferredSize(new Dimension(450, 400));
         panel.add(scrollPane, BorderLayout.CENTER);
+
+        // 保存滚动面板引用，用于同步滚动
+        rightScrollPanes[index] = scrollPane;
         
         return panel;
     }
@@ -370,6 +428,202 @@ public class FileDiffDialog extends DialogWrapper {
         } else {
             // 用户取消，全部跳过
             return new ResolutionResult[diffInfos.size()];
+        }
+    }
+
+    /**
+     * 高亮显示两个文本区域的差异
+     */
+    private void highlightDifferences(int index) {
+        if (index < 0 || index >= leftTextAreas.length || 
+            leftTextAreas[index] == null || rightTextAreas[index] == null) {
+            return;
+        }
+        
+        try {
+            String leftText = leftTextAreas[index].getText();
+            String rightText = rightTextAreas[index].getText();
+            
+            // 清除之前的高亮
+            clearHighlights(leftTextAreas[index]);
+            clearHighlights(rightTextAreas[index]);
+            
+            // 计算差异并高亮
+            List<DiffSegment> diffs = computeDifferences(leftText, rightText);
+            
+            // 应用高亮到左侧文本区域
+            applyHighlights(leftTextAreas[index], diffs, true);
+            
+            // 应用高亮到右侧文本区域
+            applyHighlights(rightTextAreas[index], diffs, false);
+            
+            diffHighlighted[index] = true;
+            
+        } catch (Exception e) {
+            LOG.error("高亮差异时出错: " + index, e);
+        }
+    }
+    
+    /**
+     * 差异片段
+     */
+    private static class DiffSegment {
+        final int start;
+        final int end;
+        final boolean isDifferent;
+        
+        DiffSegment(int start, int end, boolean isDifferent) {
+            this.start = start;
+            this.end = end;
+            this.isDifferent = isDifferent;
+        }
+    }
+    
+    /**
+     * 计算两个文本的差异
+     */
+    private List<DiffSegment> computeDifferences(String text1, String text2) {
+        List<DiffSegment> diffs = new ArrayList<>();
+        
+        // 智能差异比较：先比较行，再比较行内差异
+        String[] lines1 = text1.split("\n", -1);
+        String[] lines2 = text2.split("\n", -1);
+        
+        int maxLines = Math.max(lines1.length, lines2.length);
+        
+        for (int i = 0; i < maxLines; i++) {
+            String line1 = i < lines1.length ? lines1[i] : "";
+            String line2 = i < lines2.length ? lines2[i] : "";
+            
+            if (!line1.equals(line2)) {
+                // 计算这一行在文本中的位置
+                int start1 = getLineStartPosition(text1, i);
+                int end1 = start1 + line1.length();
+                int start2 = getLineStartPosition(text2, i);
+                int end2 = start2 + line2.length();
+                
+                // 添加整行差异
+                diffs.add(new DiffSegment(start1, end1, true));
+                diffs.add(new DiffSegment(start2, end2, true));
+                
+                // 如果行长度差异很大，可能是新增或删除的行
+                if (Math.abs(line1.length() - line2.length()) > 10) {
+                    // 标记为显著差异
+                    continue;
+                }
+                
+                // 尝试找到行内的具体差异位置
+                List<DiffSegment> inlineDiffs = findInlineDifferences(line1, line2, start1, start2);
+                diffs.addAll(inlineDiffs);
+            }
+        }
+        
+        return diffs;
+    }
+    
+    /**
+     * 查找行内差异
+     */
+    private List<DiffSegment> findInlineDifferences(String line1, String line2, int start1, int start2) {
+        List<DiffSegment> inlineDiffs = new ArrayList<>();
+        
+        // 简单的字符级差异检测
+        int minLength = Math.min(line1.length(), line2.length());
+        int diffStart = -1;
+        
+        for (int i = 0; i < minLength; i++) {
+            if (line1.charAt(i) != line2.charAt(i)) {
+                if (diffStart == -1) {
+                    diffStart = i;
+                }
+            } else if (diffStart != -1) {
+                // 差异结束，添加差异片段
+                inlineDiffs.add(new DiffSegment(start1 + diffStart, start1 + i, true));
+                inlineDiffs.add(new DiffSegment(start2 + diffStart, start2 + i, true));
+                diffStart = -1;
+            }
+        }
+        
+        // 处理行尾差异
+        if (diffStart != -1) {
+            inlineDiffs.add(new DiffSegment(start1 + diffStart, start1 + line1.length(), true));
+            inlineDiffs.add(new DiffSegment(start2 + diffStart, start2 + line2.length(), true));
+        }
+        
+        return inlineDiffs;
+    }
+    
+    /**
+     * 获取指定行在文本中的起始位置
+     */
+    private int getLineStartPosition(String text, int lineIndex) {
+        String[] lines = text.split("\n", -1);
+        int position = 0;
+        
+        for (int i = 0; i < lineIndex && i < lines.length; i++) {
+            position += lines[i].length() + 1; // +1 for newline
+        }
+        
+        return position;
+    }
+    
+    /**
+     * 清除文本区域的高亮
+     */
+    private void clearHighlights(JTextArea textArea) {
+        if (textArea.getHighlighter() != null) {
+            textArea.getHighlighter().removeAllHighlights();
+        }
+    }
+    
+    /**
+     * 应用高亮到文本区域
+     */
+    private void applyHighlights(JTextArea textArea, List<DiffSegment> diffs, boolean isLeft) {
+        try {
+            Highlighter highlighter = textArea.getHighlighter();
+            
+            for (DiffSegment diff : diffs) {
+                if (diff.isDifferent) {
+                    // 创建高亮样式
+                    Highlighter.HighlightPainter painter = new DefaultHighlighter.DefaultHighlightPainter(DIFF_HIGHLIGHT_COLOR);
+                    
+                    // 应用高亮
+                    highlighter.addHighlight(diff.start, diff.end, painter);
+                }
+            }
+        } catch (Exception e) {
+            LOG.error("应用高亮时出错", e);
+        }
+    }
+
+    // 同步两个区域的垂直滚动（按比例）
+    private void setupSynchronizedScrolling(int index) {
+        JBScrollPane left = leftScrollPanes[index];
+        JBScrollPane right = rightScrollPanes[index];
+        if (left == null || right == null) {
+            return;
+        }
+        JScrollBar leftBar = left.getVerticalScrollBar();
+        JScrollBar rightBar = right.getVerticalScrollBar();
+
+        leftBar.addAdjustmentListener(e -> syncScroll(leftBar, rightBar));
+        rightBar.addAdjustmentListener(e -> syncScroll(rightBar, leftBar));
+    }
+
+    private void syncScroll(JScrollBar source, JScrollBar target) {
+        if (isSyncingScroll) {
+            return;
+        }
+        isSyncingScroll = true;
+        try {
+            int srcMax = Math.max(1, source.getMaximum() - source.getVisibleAmount());
+            int tgtMax = Math.max(1, target.getMaximum() - target.getVisibleAmount());
+            int srcVal = source.getValue();
+            int mapped = (int) Math.round((srcVal / (double) srcMax) * tgtMax);
+            target.setValue(mapped);
+        } finally {
+            isSyncingScroll = false;
         }
     }
 } 
