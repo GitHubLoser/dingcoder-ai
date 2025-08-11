@@ -739,7 +739,8 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             JPanel bubble = new JPanel();
             bubble.setOpaque(true);
             bubble.setBackground(USER_BUBBLE_COLOR);
-            bubble.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
+            // 减少上下边框，从12px减少到6px
+            bubble.setBorder(BorderFactory.createEmptyBorder(6, 16, 6, 16));
             bubble.setLayout(new BoxLayout(bubble, BoxLayout.X_AXIS));
             
             // ✅ 使用JTextArea替代JLabel，支持文本选择和复制
@@ -752,6 +753,10 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             textArea.setBackground(USER_BUBBLE_COLOR);
             textArea.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
             textArea.setCaretColor(new JBColor(new Color(31, 35, 40), new Color(230, 237, 243)));
+            
+            // 设置合适的高度，避免过高
+            textArea.setRows(Math.min(content.split("\n").length + 1, 3)); // 用户消息最多3行
+            textArea.setMaximumSize(new Dimension(Integer.MAX_VALUE, textArea.getPreferredSize().height));
             
             // ✅ 添加右键菜单
             textArea.addMouseListener(new MouseAdapter() {
