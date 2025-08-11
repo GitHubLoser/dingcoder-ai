@@ -809,7 +809,8 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             codeArea.setWrapStyleWord(true);
             codeArea.setText(content);
             codeArea.setBackground(new JBColor(new Color(251, 252, 253), new Color(40, 40, 40)));
-            codeArea.setBorder(JBUI.Borders.empty(12, 16, 12, 16));
+            // 减少内边距，从12px减少到6px
+            codeArea.setBorder(JBUI.Borders.empty(6, 16, 6, 16));
             JScrollPane codeScroll = new JScrollPane(codeArea);
             codeScroll.setBorder(BorderFactory.createLineBorder(new JBColor(new Color(230, 230, 230), new Color(70, 70, 70)), 1));
             codeScroll.setVisible(false); // 默认折叠
@@ -817,18 +818,33 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             // 设置滚动条属性，确保代码很长时可以滚动
             codeScroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
             codeScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
-            codeScroll.setPreferredSize(new Dimension(0, 300)); // 设置最大高度为300px
-            codeScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, 300));
+            
+            // 计算代码的实际行数，设置合适的高度
+            int lineCount = content.split("\n").length;
+            int collapsedHeight = Math.min(lineCount * 16 + 20, 80); // 折叠时最大80px（进一步减少）
+            int expandedHeight = Math.min(lineCount * 16 + 20, 400); // 展开时最大400px
+            
+            // 设置折叠时的高度
+            codeScroll.setPreferredSize(new Dimension(0, collapsedHeight));
+            codeScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, collapsedHeight));
+            
+            // 强制设置整个codePanel的最大高度
+            codePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, collapsedHeight + 50)); // 标题栏高度约50px
 
             // 折叠标题栏 - 包含类名和所有按钮
             JPanel headerPanel = new JPanel(new BorderLayout());
             headerPanel.setOpaque(true);
             headerPanel.setBackground(new JBColor(new Color(247, 248, 250), new Color(50, 50, 50)));
-            headerPanel.setBorder(JBUI.Borders.empty(8, 16, 8, 16));
+            // 减少上下内边距，从8px减少到2px
+            headerPanel.setBorder(JBUI.Borders.empty(2, 16, 2, 16));
+            // 强制设置标题栏的最大高度
+            headerPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
 
             // 左侧：折叠按钮和类名
             JPanel leftPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
             leftPanel.setOpaque(false);
+            // 强制设置左侧面板的最大高度
+            leftPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
 
             JButton toggleBtn = new JButton("▶");  // 默认折叠，用右箭头
             toggleBtn.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
@@ -840,6 +856,18 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
                 boolean expanded = codeScroll.isVisible();
                 codeScroll.setVisible(!expanded);
                 toggleBtn.setText(expanded ? "▶" : "▼");
+                
+                // 自适应高度：展开时使用展开高度，折叠时使用折叠高度
+                if (!expanded) {
+                    // 展开：使用展开高度
+                    codeScroll.setPreferredSize(new Dimension(0, expandedHeight));
+                    codeScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, expandedHeight));
+                } else {
+                    // 折叠：使用折叠高度
+                    codeScroll.setPreferredSize(new Dimension(0, collapsedHeight));
+                    codeScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, collapsedHeight));
+                }
+                
                 panel.revalidate();
                 panel.repaint();
             });
@@ -855,15 +883,19 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
             // 右侧：操作按钮
             JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));  // 完全去除按钮间距
             rightPanel.setOpaque(false);
+            // 强制设置右侧面板的最大高度
+            rightPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
             
             // 生成文件按钮
             JButton generateButton = new JButton("生成文件");
             generateButton.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 11));  // 字体稍小
             generateButton.setForeground(JBColor.foreground());
-            generateButton.setBorder(BorderFactory.createEmptyBorder(3, 6, 3, 6));  // 减少内边距
+            generateButton.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));  // 进一步减少内边距
             generateButton.setFocusPainted(false);
             generateButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             generateButton.setOpaque(true);
+            // 强制设置按钮的最大高度
+            generateButton.setMaximumSize(new Dimension(Integer.MAX_VALUE, 24));
             
             // ✅ 根据消息的生成状态设置按钮初始状态
             if (message.isGenerated()) {
@@ -1407,8 +1439,9 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         JPanel batchGeneratePanel = new JBPanel<>(new FlowLayout(FlowLayout.LEFT, 16, 16));
         batchGeneratePanel.setName("batchGeneratePanel");
         batchGeneratePanel.setOpaque(false);
-        batchGeneratePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 60));
-        batchGeneratePanel.setBorder(JBUI.Borders.empty(8, 16, 8, 16));
+        // 增加高度，确保按钮边框完全显示
+        batchGeneratePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 80));
+        batchGeneratePanel.setBorder(JBUI.Borders.empty(12, 16, 12, 16));
 
         // 创建批量生成按钮
         JButton batchGenerateButton = new JButton("生成全部文件");
@@ -1436,8 +1469,10 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         batchGenerateButton.addActionListener(e -> batchGenerateAllFiles());
 
         // 设置按钮大小
-        Dimension buttonSize = new Dimension(150, 32);
+        Dimension buttonSize = new Dimension(150, 36);
         batchGenerateButton.setPreferredSize(buttonSize);
+        // 确保按钮有足够的高度显示边框
+        batchGenerateButton.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
 
         // 创建批量点赞按钮
         JButton batchLikeButton = new JButton("批量点赞");
@@ -1448,6 +1483,9 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         batchLikeButton.setFocusPainted(false);
         batchLikeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         batchLikeButton.setOpaque(true);
+        // 设置按钮高度，确保边框完全显示
+        batchLikeButton.setPreferredSize(new Dimension(150, 36));
+        batchLikeButton.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
         batchLikeButton.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseEntered(MouseEvent e) {
@@ -1499,6 +1537,9 @@ public class ChatToolWindowPanel extends JBPanel<ChatToolWindowPanel> {
         batchDislikeButton.setFocusPainted(false);
         batchDislikeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         batchDislikeButton.setOpaque(true);
+        // 设置按钮高度，确保边框完全显示
+        batchDislikeButton.setPreferredSize(new Dimension(150, 36));
+        batchDislikeButton.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
         batchDislikeButton.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseEntered(MouseEvent e) {
